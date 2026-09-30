@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cl.duoc.bank</groupId>
+        <artifactId>bank-cloud</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>broker-mensajeria</artifactId>
+    <name>broker-mensajeria</name>
+    <description>
+        Broker JMS del ecosistema: ActiveMQ Artemis embebido en una aplicacion Spring
+        Boot.
+
+        Artemis es la implementacion JMS que Spring Boot soporta de primera mano y el
+        sucesor de ActiveMQ "Classic", que es el que muestra la guia de la semana. Se
+        embebe en un jar propio -y no se descarga como distribucion ni se levanta en un
+        contenedor- por la misma razon por la que el Config Server usa el perfil native:
+        que quien corrija levante el ecosistema completo con un mvn package, sin
+        instalar nada ni depender de que Docker este corriendo.
+
+        Sigue siendo un proceso aparte, con su propio puerto y su propio ciclo de vida.
+        Embeber el broker DENTRO de un microservicio seria otra cosa: el broker moriria
+        con el, y la evidencia de que un consumidor caido no pierde eventos seria
+        imposible de mostrar.
+    </description>
+
+    <dependencies>
+        <!-- Solo por los nombres de los topicos (Topicos). Es el mismo modulo
+             sin dependencias que comparten todos: si un nombre cambia, cambia
+             en el broker y en los tres servicios a la vez. -->
+        <dependency>
+            <groupId>cl.duoc.bank</groupId>
+            <artifactId>bank-contrato</artifactId>
+        </dependency>
+
+        <!-- El servidor Artemis, en su variante jakarta.jms (Boot 3 ya no usa
+             javax). Trae el servidor, la persistencia en disco y el modulo de
+             login JAAS que se usa para autenticar a cada microservicio. -->
+        <dependency>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>artemis-jakarta-server</artifactId>
+        </dependency>
+        <!-- Cliente JMS, para la consola de administracion: publicar un mensaje
+             a mano -la prueba de duplicados- y recorrer la cola de mensajes
+             muertos. -->
+        <dependency>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>artemis-jakarta-client</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Las credenciales de los microservicios ante el broker viven en el
+             Config Server, junto con las que esos mismos servicios usan para
+             conectarse. Un solo lugar donde rotarlas. -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-config</artifactId>
+        </dependency>
+        <!-- Sin estas dos, spring.cloud.config.retry se ignora en silencio. Ver
+             el application.yml de ms-cuentas. -->
+        <dependency>
+            <groupId>org.springframework.retry</groupId>
+            <artifactId>spring-retry</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

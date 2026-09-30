@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cl.duoc.bank</groupId>
+        <artifactId>bank-cloud</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>bff-movil</artifactId>
+    <name>bff-movil</name>
+    <description>
+        BFF del canal telefono.
+
+        LO QUE CAMBIO EN ESTE POM ES LA ENTREGA ENTERA EN UNA LINEA: ya no aparece
+        bank-core. El dominio y sus repositorios JPA dejaron de estar en el classpath de
+        este servicio, asi que acceder a la base de datos desde aqui no es una mala
+        practica que haya que evitar por disciplina: no compila. Los datos llegan por HTTP
+        desde ms-cuentas, a traves de bank-cliente.
+
+        Tampoco hay driver de base de datos ni starter-data-jpa. Este proceso no sabe que
+        existe una base.
+    </description>
+
+    <dependencies>
+        <!-- Cliente HTTP de ms-cuentas: descubrimiento, credencial de servicio,
+             Circuit Breaker y Retry. Arrastra bank-contrato. -->
+        <dependency>
+            <groupId>cl.duoc.bank</groupId>
+            <artifactId>bank-cliente</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cl.duoc.bank</groupId>
+            <artifactId>bank-seguridad</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Se registra en Eureka y descubre a ms-cuentas. -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+        <!-- Pide su configuracion al Config Server al arrancar. -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-config</artifactId>
+        </dependency>
+        <!-- CORRECCION RESPECTO DE LA SEMANA 6. Sin spring-retry, el bloque
+             spring.cloud.config.retry del application.yml se ignora en
+             silencio y el servicio muere al primer intento si el Config
+             Server no responde. Ver el application.yml de ms-cuentas. -->
+        <dependency>
+            <groupId>org.springframework.retry</groupId>
+            <artifactId>spring-retry</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

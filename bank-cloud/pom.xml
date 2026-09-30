@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.3</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>cl.duoc.bank</groupId>
+    <artifactId>bank-cloud</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>bank-cloud</name>
+    <description>
+        PBY2203 Exp3 S7 - Tolerancia a fallos y arquitectura de eventos.
+
+        Continuidad directa de la semana 6. Alli el ecosistema era enteramente
+        sincrono: tres BFF llamando por HTTP a ms-cuentas, protegidos con Circuit
+        Breaker. Esta entrega agrega la otra mitad: una Saga coreografiada de
+        transferencias entre cuentas que viaja por eventos JMS sobre un broker
+        ActiveMQ Artemis, con dos microservicios nuevos -ms-transferencias y
+        ms-auditoria- y ms-cuentas como participante que escala horizontalmente.
+    </description>
+
+    <modules>
+        <!-- =====
+             INFRAESTRUCTURA SPRING CLOUD
+             ===== -->
+
+        <!-- Configuracion centralizada de los cuatro servicios. Puerto 8888. -->
+        <module>config-server</module>
+
+        <!-- Registro y descubrimiento. Puerto 8761. -->
+        <module>eureka-server</module>
+
+        <!-- Broker de mensajeria JMS: ActiveMQ Artemis embebido. 61616 para
+             los clientes JMS, 8161 para la consola de administracion. Es un
+             modulo mas del proyecto y no un contenedor, para que quien clone
+             levante el ecosistema completo sin instalar nada. -->
+        <module>broker-mensajeria</module>
+
+        <!-- Nuevo en S8: servidor de autorizacion OAuth 2.0 (Spring
+             Authorization Server). El unico que emite y firma tokens. 9000. -->
+        <module>auth-server</module>
+
+        <!-- =====
+             LIBRERIAS COMPARTIDAS - no son desplegables
+             ===== -->
+
+        <!-- Contrato de la API de ms-cuentas: solo records, cero dependencias.
+             Lo comparten el servicio y sus clientes, igual que un cliente
+             generado desde OpenAPI. No es el dominio. -->
+        <module>bank-contrato</module>
+
+        <!-- Cliente HTTP de ms-cuentas, con su Circuit Breaker y sus Fallback.
+             Lo usan los tres BFF; ninguno reimplementa la llamada. -->
+        <module>bank-cliente</module>
+
+        <!-- Dominio: entidades, repositorios y servicios de consulta. Ahora lo
+             usa UN SOLO modulo, ms-cuentas, y no los tres BFF. Esa es la
+             diferencia que separa esta entrega de la anterior. -->
+        <module>bank-core</module>
+
+        <!-- Emision y validacion de JWT. Transversal a los tres canales, pero
+             cada uno la configura con SU clave, SU emisor y SU duracion. -->
+        <module>bank-seguridad</module>
+
+        <!-- Mensajeria comun a los tres servicios que hablan por eventos: el
+             conversor JSON con nombres de tipo estables, la fabrica de
+             suscripciones compartidas y los nombres de los topicos. -->
+        <module>bank-eventos</module>
+
+        <!-- =====
+             MICROSERVICIOS - cada uno es un jar ejecutable independiente
+             ===== -->
+
+        <!-- El Backend real: unico servicio con acceso a la base de datos. 8090. -->
+        <module>ms-cuentas</module>
+
+        <!-- Nuevo en S7: inicia la Saga de transferencias, es duenio del cupo
+             diario y publica por outbox. 8091. -->
+        <module>ms-transferencias</module>
+
+        <!-- Nuevo en S7: se suscribe a todos los eventos y guarda un registro
+             inmutable del que se reconstruye cada transferencia. 8092. -->
+        <module>ms-auditoria</module>
+
+        <!-- Un BFF por canal. Ya no tocan la base: llaman a ms-cuentas. -->
+        <module>bff-web</module>
+        <module>bff-movil</module>
+        <module>bff-cajero</module>
+    </modules>
+
+    <properties>
+        <java.version>17</java.version>
+        <!-- Linea 2025.0.x: es la que acompania a Spring Boot 3.5.x. La 2024.0.x
+             va con 3.4.x y la 2025.1.x con 3.6.x; cruzarlas produce fallos de
+             arranque que no apuntan a la version. -->
+        <spring-cloud.version>2025.0.3</spring-cloud.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>cl.duoc.bank</groupId>
+                <artifactId>bank-contrato</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cl.duoc.bank</groupId>
+                <artifactId>bank-cliente</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cl.duoc.bank</groupId>
+                <artifactId>bank-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cl.duoc.bank</groupId>
+                <artifactId>bank-seguridad</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cl.duoc.bank</groupId>
+                <artifactId>bank-eventos</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- Lombok en todos los modulos: reduce el ruido de getters y constructores
+             en DTO, que en este proyecto son muchos y muy parecidos entre si. -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <configuration>
+                        <excludes>
+                            <exclude>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                            </exclude>
+                        </excludes>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

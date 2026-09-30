@@ -1,0 +1,65 @@
+# ===========================================================================
+# ms-cuentas, perfil 'oracle'
+# ===========================================================================
+# Se activa arrancando ms-cuentas con --spring.profiles.active=oracle. El
+# Config Server entonces superpone este archivo sobre ms-cuentas.yml.
+#
+# Que UN SOLO ARCHIVO baste para cambiar el motor de los tres canales es la
+# demostracion mas directa de lo que aporta la configuracion centralizada. En
+# la entrega anterior habia un application-oracle.properties por BFF, los tres
+# identicos, y mantenerlos sincronizados era manual.
+#
+# Es ademas la continuidad real con la Experiencia 1: las tablas cuenta,
+# transaccion y movimiento_anual las creo y poblo el batch de Spring Batch, y
+# ms-cuentas sirve lo que aquel calculo -saldo_final con intereses aplicados,
+# la marca de anomalia- en vez de recalcularlo.
+#
+# AQUI NO VA NINGUNA CREDENCIAL: este archivo se publica en GitHub. Los valores
+# salen de variables de entorno y, si falta alguna, el servicio falla al
+# arrancar con un mensaje claro en vez de conectarse a otra cosa.
+#
+# En PowerShell, antes de ejecutar (comillas SIMPLES: con dobles PowerShell
+# expande $variables y backticks que haya dentro de la contrasena):
+#
+#   $env:ORACLE_JDBC_URL = "jdbc:oracle:thin:@<servicio>_low?TNS_ADMIN=C:/oracle/wallet"
+#   $env:ORACLE_USER     = "BANK_CUENTAS"   (SEMANA 8: ya no ADMIN, ver herramientas/usuarios_oracle_s8.sql)
+#   $env:ORACLE_PASSWORD = 'la-clave'
+
+spring:
+  datasource:
+    url: ${ORACLE_JDBC_URL}
+    username: ${ORACLE_USER}
+    password: ${ORACLE_PASSWORD}
+    driver-class-name: oracle.jdbc.OracleDriver
+    hikari:
+      # Pool chico y con validacion: Autonomous Database corta las conexiones
+      # ociosas, y este servicio pasa ratos largos sin recibir peticiones.
+      # SEMANA 8: 4 y no 5, porque ahora son DOS replicas contra la misma ADB
+      # Always Free, que admite unas 20 sesiones; el reparto completo esta en
+      # ms-transferencias-oracle.yml.
+      maximum-pool-size: 4
+      minimum-idle: 1
+      connection-timeout: 60000
+      validation-timeout: 10000
+      max-lifetime: 600000
+      connection-test-query: SELECT 1 FROM DUAL
+  jpa:
+    hibernate:
+      # 'validate' y no 'update': el esquema lo manda la Experiencia 1 y este
+      # proyecto solo lo consume. Si las entidades y las tablas dejaran de
+      # calzar, es preferible que el servicio no arranque a que Hibernate
+      # altere en silencio una tabla que otro proyecto escribe.
+      ddl-auto: validate
+      # SEMANA 7: la tabla evento_procesado es nueva y el batch de la
+      # Experiencia 1 no la creo. Antes de levantar con -Oracle hay que
+      # ejecutar una vez herramientas/evento_procesado_oracle.sql (SEMANA 8: lo
+      # incluye usuarios_oracle_s8.sql); si no, este
+      # validate detiene el arranque, que es exactamente para lo que esta.
+    open-in-view: false
+    show-sql: false
+
+bank:
+  datos:
+    # La carga desde CSV no se ejecuta si la tabla ya tiene filas, asi que
+    # contra Oracle no toca nada. Se deja explicito para que quede escrito.
+    cargar-si-vacio: true

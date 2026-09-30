@@ -1,0 +1,72 @@
+# ===========================================================================
+# ms-transferencias - inicia la saga, cupo diario, outbox
+# ===========================================================================
+
+server:
+  port: 8091
+
+spring:
+  # Base propia. No es la de ms-cuentas y no podria serlo sin deshacer el
+  # punto de la saga: si las dos cosas vivieran en la misma base, bastaria
+  # una transaccion y la saga sobraria.
+  datasource:
+    url: jdbc:h2:file:./basedatos/transferencias
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  artemis:
+    user: ms-transferencias
+    password: ${BROKER_CLAVE_TRANSFERENCIAS:transferencias-broker-2026}
+
+bank:
+  transferencias:
+    # Por cuenta y por dia. Se reserva al aceptar la solicitud y se devuelve
+    # si la saga se compensa.
+    cupo-diario: 500000
+
+  outbox:
+    # Cada cuanto el publicador revisa si hay eventos por enviar. Medio
+    # segundo es la latencia maxima que agrega el outbox a una transferencia
+    # cuando el broker esta disponible.
+    intervalo-ms: 500
+
+eureka:
+  instance:
+    appname: ms-transferencias
+
+# ---------------------------------------------------------------------------
+# Circuit Breaker de la publicacion al broker
+# ---------------------------------------------------------------------------
+# Numeros propios, no los de configs.default. Aqui nadie espera la respuesta
+# -la transferencia ya se acepto-, asi que no hay que abrir rapido para
+# proteger a un usuario, sino dejar de insistir contra un broker que no esta.
+#   - tres fallos seguidos bastan para darlo por caido: el publicador envia en
+#     serie, asi que tres fallos son tres intentos consecutivos.
+#   - quince segundos abierto: un broker que se reinicia tarda eso o mas.
+#   - una sola sonda en HALF_OPEN: si pasa, el outbox se vacia completo en la
+#     siguiente vuelta.
+resilience4j:
+  circuitbreaker:
+    instances:
+      broker:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 3
+        minimum-number-of-calls: 3
+        failure-rate-threshold: 100
+        wait-duration-in-open-state: 15s
+        permitted-number-of-calls-in-half-open-state: 1
+        automatic-transition-from-open-to-half-open-enabled: true
+        register-health-indicator: true
+
+# ---------------------------------------------------------------------------
+# OAuth 2.0 (SEMANA 8): este servicio solo acepta tokens dirigidos a el
+# ---------------------------------------------------------------------------
+# Reemplaza a las credenciales Basic de la semana 7. El emisor y la clave
+# publica son comunes y estan en application.yml; aqui va solo la audiencia.
+# Un token valido del auth-server pero pedido para otro servicio -o el de una
+# persona para su BFF- se rechaza con 401.
+spring.security.oauth2.resourceserver.jwt.audiences: ms-transferencias

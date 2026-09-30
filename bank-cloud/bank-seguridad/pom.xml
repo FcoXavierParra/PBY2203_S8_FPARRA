@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cl.duoc.bank</groupId>
+        <artifactId>bank-cloud</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>bank-seguridad</artifactId>
+    <name>bank-seguridad</name>
+    <description>
+        Autorizacion comun a los BFF y los microservicios: como se traduce un token
+        del servidor de autorizacion a permisos (ConversorJwt) y la regla de
+        pertenencia de cuenta (AutorizacionCuenta).
+
+        SEMANA 8: ya no emite ni valida firmas. Hasta la semana 7 este modulo firmaba
+        los JWT de cada canal con HMAC; ahora los firma solo auth-server, con RSA, y
+        cada servicio los verifica con la clave publica como servidor de recursos
+        OAuth 2.0. Aqui no queda ninguna clave.
+    </description>
+
+    <dependencies>
+        <!-- Servidor de recursos OAuth 2.0: validacion de JWT con la clave publica
+             del auth-server (JWKS), emisor y audiencia. Lo heredan los seis
+             servicios que dependen de este modulo. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

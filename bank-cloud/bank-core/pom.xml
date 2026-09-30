@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cl.duoc.bank</groupId>
+        <artifactId>bank-cloud</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>bank-core</artifactId>
+    <name>bank-core</name>
+    <description>
+        Dominio compartido por los tres BFF: entidades, repositorios, carga del dataset
+        oficial y consultas sin forma de canal.
+
+        Deliberadamente NO trae spring-boot-starter-web. Es una libreria, no una aplicacion:
+        si pudiera exponer endpoints, nada impediria que la logica de un canal terminara
+        aca y el patron se volveria decorativo.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- Driver de Oracle para el perfil 'oracle', que apunta a la misma
+             Autonomous Database que poblo el batch de la Experiencia 1.
+             oraclepki NO es opcional: es quien sabe leer el cwallet.sso, y sin
+             el la conexion muere en ORA-17957 con un error que no menciona el
+             wallet por ninguna parte. -->
+        <dependency>
+            <groupId>com.oracle.database.jdbc</groupId>
+            <artifactId>ojdbc11</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.oracle.database.security</groupId>
+            <artifactId>oraclepki</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Este modulo se empaqueta como jar normal, no como jar ejecutable:
+                 no tiene main y los tres BFF lo consumen como dependencia. -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

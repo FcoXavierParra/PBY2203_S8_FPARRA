@@ -1,0 +1,67 @@
+# ---------------------------------------------------------------------------
+# ms-cuentas - lo unico que queda dentro del jar
+# ---------------------------------------------------------------------------
+# Todo lo demas -puerto, base de datos, credenciales de servicio, dataset-
+# llega desde el Config Server. Este archivo solo dice quien soy y donde
+# preguntar; ver config-server/src/main/resources/config-repo/ms-cuentas.yml
+# para el resto.
+#
+# POR QUE spring.config.import Y NO UN bootstrap.yml
+# --------------------------------------------------
+# La guia de la semana muestra bootstrap.yml, que era el mecanismo de Spring
+# Cloud hasta 2020: un contexto previo que se levantaba solo para ir a buscar
+# la configuracion. Desde Spring Boot 2.4 ese contexto esta DESACTIVADO por
+# defecto y en Boot 3.x -que es lo que usa este proyecto- un bootstrap.yml se
+# ignora en silencio, que es la peor forma de fallar: la aplicacion arranca con
+# los valores por defecto y nada avisa que nunca hablo con el config server.
+#
+# Hay dos formas de hacerlo hoy:
+#   1. Agregar la dependencia spring-cloud-starter-bootstrap, que revive el
+#      mecanismo antiguo. Sirve para migrar proyectos existentes.
+#   2. Declarar spring.config.import, que es lo que se usa aqui. La
+#      configuracion remota entra como un origen mas de Spring Boot, con las
+#      mismas reglas de precedencia que cualquier otro.
+#
+# Se eligio la segunda por ser la vigente y porque falla ruidosamente: sin el
+# prefijo 'optional:', si el config server no responde la aplicacion no
+# arranca. Eso es deseable en un servicio que sin su configuracion remota no
+# sabe ni a que base de datos conectarse.
+
+spring:
+  application:
+    # Tiene que coincidir con el nombre del archivo en config-repo: el cliente
+    # pide {application}.yml y el servidor lo busca por ese nombre.
+    name: ms-cuentas
+  config:
+    import: "configserver:${CONFIG_SERVER_URL:http://localhost:7888}"
+  cloud:
+    config:
+      # Fallar al arrancar, y no seguir con valores por defecto.
+      fail-fast: true
+      retry:
+        # El config server puede estar todavia levantandose, o caido un rato.
+        #
+        # CORRECCION RESPECTO DE LA SEMANA 6
+        # ----------------------------------
+        # Este bloque ya existia y su comentario decia que "seis intentos con
+        # espera creciente cubren su arranque". No era cierto: Spring Cloud
+        # Config solo reintenta si spring-retry y spring-boot-starter-aop
+        # estan en el classpath, y no estaban. Sin ellos el bloque se ignora en
+        # silencio, y con fail-fast el servicio moria al PRIMER intento. Que
+        # la semana 6 funcionara era merito de levantar.ps1, que no arrancaba
+        # ningun servicio hasta ver al Config Server UP.
+        #
+        # La retroalimentacion de la semana 6 sugirio justamente probar que
+        # pasa si el Config Server no esta al arrancar. La prueba destapo esto,
+        # y la evidencia de esta semana la repite con el jar de la semana 6 y
+        # con el de esta, para que se vea la diferencia.
+        #
+        # Los numeros tambien cambiaron: 2 s, 3 s, 4,5 s ... hasta 15 s, veinte
+        # veces, son unos cuatro minutos de espera. En este equipo el Config
+        # Server tarda mas de un minuto en arrancar; seis intentos de hasta
+        # 4 s, unos 17 s en total, no lo habrian esperado aunque el reintento
+        # hubiera funcionado.
+        initial-interval: 2000
+        multiplier: 1.5
+        max-interval: 15000
+        max-attempts: 20

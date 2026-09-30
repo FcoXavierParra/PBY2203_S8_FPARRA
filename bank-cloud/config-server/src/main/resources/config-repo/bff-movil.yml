@@ -1,0 +1,55 @@
+# ===========================================================================
+# bff-movil - canal telefono
+# ===========================================================================
+
+server:
+  port: 8082
+  ssl:
+    enabled: true
+    key-store: file:./certs/bff-movil.p12
+    key-store-type: PKCS12
+    key-alias: bff-movil
+    key-store-password: ${BFF_KEYSTORE_PASSWORD:bffbancoxyz}
+    enabled-protocols: TLSv1.2,TLSv1.3
+
+eureka:
+  instance:
+    secure-port: 8082
+    secure-port-enabled: true
+    non-secure-port-enabled: false
+    status-page-url: https://${spring.cloud.client.ip-address}:8082/actuator/info
+    health-check-url: https://${spring.cloud.client.ip-address}:8082/actuator/health
+
+# ---------------------------------------------------------------------------
+# OAuth 2.0 (SEMANA 8)
+# ---------------------------------------------------------------------------
+# El token de dispositivo compartido, la tabla deviceId -> cuenta y el secreto
+# de firma de este canal desaparecen. La aplicacion movil es un cliente OAuth 2.0
+# publico (canal-movil) y la persona se autentica en el auth-server; su cuenta
+# viaja firmada en el token. Ver SeguridadMovilConfig.
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          audiences: bff-movil
+      client:
+        registration:
+          # Solo lectura: este canal no mueve dinero, y el auth-server no le
+          # concederia cuentas.operar aunque lo pidiera (invalid_scope).
+          ms-cuentas:
+            provider: banco
+            client-id: bff-movil
+            client-secret: ${AUTH_SECRETO_BFF_MOVIL:bff-movil-desarrollo-2026}
+            authorization-grant-type: client_credentials
+            scope: cuentas.leer
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      msCuentas:
+        base-config: default
+  retry:
+    instances:
+      msCuentas:
+        base-config: default

@@ -1,0 +1,20 @@
+# ---------------------------------------------------------------------------
+# ms-auditoria - lo unico que queda dentro del jar
+# ---------------------------------------------------------------------------
+# Puerto, base, broker y credenciales llegan desde el Config Server:
+# ver config-repo/ms-auditoria.yml. El reintento contra el Config Server
+# funciona porque spring-retry esta en el pom; ver el application.yml de
+# ms-cuentas para la historia completa.
+spring:
+  application:
+    name: ms-auditoria
+  config:
+    import: "configserver:${CONFIG_SERVER_URL:http://localhost:7888}"
+  cloud:
+    config:
+      fail-fast: true
+      retry:
+        initial-interval: 2000
+        multiplier: 1.5
+        max-interval: 15000
+        max-attempts: 20

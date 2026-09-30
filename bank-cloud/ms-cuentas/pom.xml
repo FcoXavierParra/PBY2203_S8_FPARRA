@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cl.duoc.bank</groupId>
+        <artifactId>bank-cloud</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>ms-cuentas</artifactId>
+    <name>ms-cuentas</name>
+    <description>
+        El servicio Backend de dominio. Unico proceso con acceso a la base de datos.
+
+        Es la respuesta directa a la retroalimentacion de la semana 5: antes bank-core
+        viajaba dentro de los tres BFF como libreria y los agregados se calculaban sobre
+        acceso directo a los repositorios. Ahora bank-core esta aqui y solo aqui, y los BFF
+        obtienen esos mismos agregados llamando por HTTP a un servicio Backend real.
+    </description>
+
+    <dependencies>
+        <!-- El dominio. Notar que NINGUN bff lo declara ya: esa es la frontera
+             que esta entrega mueve. -->
+        <dependency>
+            <groupId>cl.duoc.bank</groupId>
+            <artifactId>bank-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cl.duoc.bank</groupId>
+            <artifactId>bank-contrato</artifactId>
+        </dependency>
+        <!-- SEMANA 8: servidor de recursos OAuth 2.0. Valida los tokens del auth-server
+             y traduce sus scopes a permisos (ConversorJwt). Reemplaza al usuario y
+             clave Basic con que los BFF se identificaban hasta la semana 7. -->
+        <dependency>
+            <groupId>cl.duoc.bank</groupId>
+            <artifactId>bank-seguridad</artifactId>
+        </dependency>
+        <!-- Nuevo en S7: participante de la saga de transferencias por JMS. -->
+        <dependency>
+            <groupId>cl.duoc.bank</groupId>
+            <artifactId>bank-eventos</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!-- Autenticacion entre servicios. Ver SeguridadInternaConfig. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <!-- /actuator/health es lo que Eureka publica y lo que la evidencia
+             consulta para demostrar que el servicio esta vivo. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-config</artifactId>
+        </dependency>
+        <!-- CORRECCION RESPECTO DE LA SEMANA 6. Sin spring-retry, el bloque
+             spring.cloud.config.retry del application.yml se ignora en
+             silencio y el servicio muere al primer intento si el Config
+             Server no responde. Ver el application.yml de ms-cuentas. -->
+        <dependency>
+            <groupId>org.springframework.retry</groupId>
+            <artifactId>spring-retry</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

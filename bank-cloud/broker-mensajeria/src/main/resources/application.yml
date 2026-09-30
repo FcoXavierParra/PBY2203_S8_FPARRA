@@ -1,0 +1,22 @@
+# ---------------------------------------------------------------------------
+# broker-mensajeria - lo unico que queda dentro del jar
+# ---------------------------------------------------------------------------
+# Puerto, carpeta del journal, reintentos y usuarios llegan desde el Config
+# Server: ver config-repo/broker-mensajeria.yml.
+#
+# Mismo esquema que los demas servicios, incluida la correccion de esta
+# entrega: el reintento contra el Config Server ahora funciona de verdad,
+# porque spring-retry esta en el pom. Ver el application.yml de ms-cuentas.
+spring:
+  application:
+    name: broker-mensajeria
+  config:
+    import: "configserver:${CONFIG_SERVER_URL:http://localhost:7888}"
+  cloud:
+    config:
+      fail-fast: true
+      retry:
+        initial-interval: 2000
+        multiplier: 1.5
+        max-interval: 15000
+        max-attempts: 20

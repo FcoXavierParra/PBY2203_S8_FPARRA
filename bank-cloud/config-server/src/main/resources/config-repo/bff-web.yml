@@ -1,0 +1,108 @@
+# ===========================================================================
+# bff-web - canal navegador
+# ===========================================================================
+
+server:
+  port: 8081
+  # -------------------------------------------------------------------------
+  # HTTPS con certificado propio de este canal
+  # -------------------------------------------------------------------------
+  # No comparten keystore a proposito: son tres servicios que se despliegan por
+  # separado, y compartir la clave privada significaria que comprometer el
+  # cajero -el equipo expuesto en la calle- entrega tambien la identidad del
+  # canal web.
+  #
+  # Los certificados NO estan en el repositorio: un keystore guarda una clave
+  # privada y versionarla la vuelve inutil como credencial. Los genera
+  # generar_certificados.ps1, que levantar.ps1 invoca solo si faltan.
+  #
+  # ALCANCE: autofirmados, de desarrollo. En produccion irian emitidos por una
+  # CA, o el TLS lo terminaria el balanceador.
+  ssl:
+    enabled: true
+    key-store: file:./certs/bff-web.p12
+    key-store-type: PKCS12
+    key-alias: bff-web
+    key-store-password: ${BFF_KEYSTORE_PASSWORD:bffbancoxyz}
+    # Solo TLS 1.2 y 1.3: las anteriores tienen debilidades conocidas y ningun
+    # cliente de este sistema las necesita.
+    enabled-protocols: TLSv1.2,TLSv1.3
+
+eureka:
+  instance:
+    # Este BFF solo habla HTTPS, asi que se anuncia en el registro con su
+    # puerto seguro. Dejar el no seguro habilitado publicaria una direccion
+    # http://localhost:8081 que no responde.
+    secure-port: 8081
+    secure-port-enabled: true
+    non-secure-port-enabled: false
+    status-page-url: https://${spring.cloud.client.ip-address}:8081/actuator/info
+    health-check-url: https://${spring.cloud.client.ip-address}:8081/actuator/health
+
+bank:
+  web:
+    # Respaldo para marcar anomalias cuando los datos vienen de los CSV y
+    # ningun batch los proceso. Ver el javadoc de CuentaWebController.
+    umbral-anomalia: 2500
+
+# ---------------------------------------------------------------------------
+# OAuth 2.0 (SEMANA 8)
+# ---------------------------------------------------------------------------
+# Hasta la semana 7 aqui vivian el secreto con que este BFF firmaba sus tokens,
+# la lista de usuarios con sus claves y dos credenciales Basic para hablar con
+# los microservicios. Nada de eso existe ya en este canal:
+#   - los usuarios, sus claves y su cuenta estan en el auth-server
+#     (config-repo/auth-server.yml), que es quien autentica a las personas;
+#   - este BFF no firma nada: verifica con la clave publica del auth-server
+#     (application.yml) y exige que el token vaya dirigido a el;
+#   - para llamar a los microservicios pide tokens de maquina, uno por destino,
+#     con solo los scopes que este canal necesita.
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # El token de la persona tiene que decir aud = bff-web. El que la
+          # misma persona obtuvo para la aplicacion movil trae aud = bff-movil
+          # y aqui se rechaza con 401.
+          audiences: bff-web
+      client:
+        registration:
+          # Un registro por microservicio de destino, con el mismo cliente
+          # (bff-web) pero distintos scopes: el token que se manda a ms-cuentas
+          # no sirve para iniciar transferencias, y el de ms-transferencias no
+          # sirve para leer cuentas.
+          ms-cuentas:
+            provider: banco
+            client-id: bff-web
+            client-secret: ${AUTH_SECRETO_BFF_WEB:bff-web-desarrollo-2026}
+            authorization-grant-type: client_credentials
+            scope: cuentas.leer
+          ms-transferencias:
+            provider: banco
+            client-id: bff-web
+            client-secret: ${AUTH_SECRETO_BFF_WEB:bff-web-desarrollo-2026}
+            authorization-grant-type: client_credentials
+            scope: transferencias.crear,transferencias.leer
+
+# ---------------------------------------------------------------------------
+# Tolerancia a fallos de la llamada a ms-cuentas
+# ---------------------------------------------------------------------------
+# Hereda los numeros de configs.default en application.yml. Este canal no los
+# ajusta porque un navegador tolera bien una respuesta degradada: mostrar la
+# ficha sin los agregados es preferible a una pantalla de error.
+resilience4j:
+  circuitbreaker:
+    instances:
+      msCuentas:
+        base-config: default
+      msTransferencias:
+        base-config: default
+  retry:
+    instances:
+      msCuentas:
+        base-config: default
+      # La solicitud de transferencia SI se reintenta: viaja con clave de
+      # idempotencia. Ver el javadoc de ClienteTransferencias.
+      msTransferencias:
+        base-config: default

@@ -1,0 +1,18 @@
+# ---------------------------------------------------------------------------
+# auth-server - lo unico que queda dentro del jar
+# ---------------------------------------------------------------------------
+# Puerto, emisor, clientes registrados y usuarios llegan desde el Config
+# Server: ver config-repo/auth-server.yml.
+spring:
+  application:
+    name: auth-server
+  config:
+    import: "configserver:${CONFIG_SERVER_URL:http://localhost:7888}"
+  cloud:
+    config:
+      fail-fast: true
+      retry:
+        initial-interval: 2000
+        multiplier: 1.5
+        max-interval: 15000
+        max-attempts: 20

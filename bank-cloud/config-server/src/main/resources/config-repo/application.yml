@@ -1,0 +1,151 @@
+# ===========================================================================
+# CONFIGURACION COMUN A LOS CUATRO MICROSERVICIOS
+# ===========================================================================
+# El Config Server entrega este archivo a todo cliente, y encima le superpone
+# el suyo propio ({spring.application.name}.yml). Lo que vive aqui es lo que
+# seria identico en los cuatro, y tenerlo una sola vez es la mitad del valor de
+# centralizar: cambiar la direccion de Eureka o subir el detalle de un log se
+# hace en un archivo, no en cuatro.
+# ===========================================================================
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+    # Cada cuanto el cliente se baja la tabla de servicios. El valor por
+    # defecto es 30 segundos, pensado para que un registro con cientos de
+    # instancias no se sature. Aqui se baja a 5 porque la evidencia necesita
+    # mostrar que una instancia caida desaparece, y esperar medio minuto por
+    # cada paso volveria la demostracion ilegible.
+    registry-fetch-interval-seconds: 5
+  instance:
+    # Registrarse por IP y no por nombre de maquina: en Windows el nombre del
+    # equipo no siempre resuelve desde otro proceso, y el sintoma es una
+    # llamada entre servicios que falla con UnknownHostException aunque el
+    # registro se vea correcto en la consola de Eureka.
+    prefer-ip-address: true
+    # Latido cada 5 segundos y baja a los 10 sin latido. Mismo motivo que
+    # arriba: los valores por defecto -30 y 90- hacen que un servicio detenido
+    # siga figurando como vivo durante minuto y medio.
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 10
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # circuitbreakers y circuitbreakerevents son los que permiten
+        # DEMOSTRAR el estado del Circuit Breaker en la evidencia, en vez de
+        # solo afirmar que esta configurado.
+        include: health,info,circuitbreakers,circuitbreakerevents,refresh
+  endpoint:
+    health:
+      show-details: always
+  health:
+    circuitbreakers:
+      enabled: true
+
+# ---------------------------------------------------------------------------
+# Tolerancia a fallos: la configuracion por defecto que heredan los tres BFF
+# ---------------------------------------------------------------------------
+# Cada BFF declara despues SU instancia con SUS numeros, porque lo que es un
+# fallo aceptable no es igual en los tres canales. Ver cada bff-*.yml.
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        # Ventana por conteo y no por tiempo: en esta demostracion las
+        # peticiones llegan de a una desde un script, y una ventana temporal
+        # cerraria el circuito por falta de trafico y no por exito.
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        # Con la mitad de las llamadas fallando, el circuito abre.
+        failure-rate-threshold: 50
+        # Cuanto se queda abierto antes de dejar pasar sondas de prueba.
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 2
+        automatic-transition-from-open-to-half-open-enabled: true
+        # Una llamada lenta tambien es un fallo: un servicio que tarda ocho
+        # segundos en responder deja al canal colgado igual que uno caido.
+        slow-call-duration-threshold: 2s
+        slow-call-rate-threshold: 50
+        register-health-indicator: true
+  retry:
+    configs:
+      default:
+        max-attempts: 2
+        wait-duration: 200ms
+        # Reintentar SOLO errores de transporte. Un 404 o un 403 no mejoran
+        # porque se repitan, y reintentarlos duplica la carga sobre un
+        # servicio que ya respondio lo que tenia que responder.
+        retry-exceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - org.springframework.web.client.ResourceAccessException
+
+# ---------------------------------------------------------------------------
+# Mensajeria (nuevo en S7): como llegar al broker
+# ---------------------------------------------------------------------------
+# La direccion vive aqui, una vez, para los tres servicios de eventos. Cada
+# uno declara en su archivo SU usuario, que es distinto: el broker da permisos
+# por usuario. Los BFF reciben estas lineas tambien y las ignoran, porque no
+# tienen cliente JMS en el classpath.
+spring:
+  artemis:
+    # native: conectarse a un broker externo, no levantar uno embebido.
+    mode: native
+    # Los parametros de la URL definen como se comporta el cliente cuando el
+    # broker NO esta, que es lo que la evidencia pone a prueba:
+    #   initialConnectAttempts=1, reconnectAttempts=0
+    #     fallar enseguida en vez de quedarse reintentando por dentro. Los
+    #     reintentos ya los hace quien corresponde: el Circuit Breaker del
+    #     outbox para publicar, y el recoveryInterval de cada listener para
+    #     consumir. Un tercer nivel de reintento escondido en el driver haria
+    #     que una publicacion se quedara colgada sin que el circuito lo viera.
+    #   callTimeout=3000
+    #     una operacion que no recibe respuesta en 3 s es un fallo.
+    broker-url: "tcp://${BROKER_HOST:localhost}:61616?initialConnectAttempts=1&reconnectAttempts=0&callTimeout=3000"
+  jms:
+    # Todo destino es un topico. La DLQ es la unica cola, y solo la lee el
+    # administrador del broker.
+    pub-sub-domain: true
+
+  # -------------------------------------------------------------------------
+  # OAuth 2.0 (nuevo en S8): como llegar al auth-server
+  # -------------------------------------------------------------------------
+  security:
+    oauth2:
+      # Lado SERVIDOR DE RECURSOS: los tres BFF y los tres microservicios.
+      # Cada uno agrega en su archivo su 'audiences': el nombre que un token
+      # debe traer en 'aud' para ser aceptado ahi.
+      resourceserver:
+        jwt:
+          # La clave PUBLICA con que se verifica la firma. Se lee en la primera
+          # peticion con token, no al arrancar: ningun servicio depende de que
+          # el auth-server este arriba para arrancar, y una vez leida queda en
+          # cache, asi que los tokens ya emitidos se siguen validando aunque el
+          # auth-server se caiga.
+          jwk-set-uri: ${AUTH_SERVER_URL:http://localhost:9000}/oauth2/jwks
+          # El 'iss' exigido. Con jwk-set-uri presente, Spring NO consulta el
+          # documento de descubrimiento del emisor: solo compara el claim. Por
+          # eso el emisor puede ser un nombre (http://auth-server:9000) y la
+          # clave leerse por otra direccion.
+          issuer-uri: ${AUTH_ISSUER:http://localhost:9000}
+      # Lado CLIENTE: los BFF, cuando piden tokens de maquina para llamar a los
+      # microservicios. Cada BFF declara en su archivo sus 'registration'.
+      client:
+        provider:
+          banco:
+            token-uri: ${AUTH_SERVER_URL:http://localhost:9000}/oauth2/token
+
+logging:
+  level:
+    cl.duoc.bank: INFO
+    # El cliente JMS registra cada reintento de conexion como WARN con la traza
+    # completa. Con el broker caido a proposito en la evidencia, eso son
+    # cientos de lineas que tapan lo que importa.
+    org.springframework.jms.listener.DefaultMessageListenerContainer: ERROR
+    org.apache.activemq.artemis.core.client: ERROR
+    com.netflix.discovery: WARN
+    org.springframework.cloud.config.client: INFO

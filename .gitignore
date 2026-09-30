@@ -1,0 +1,105 @@
+# ---------------------------------------------------------------------------
+# Material del curso
+# ---------------------------------------------------------------------------
+# Las guias, instrucciones y pautas .docx son material de Duoc UC y su aviso de
+# derechos prohibe expresamente reproducirlas o publicarlas. No van al repo.
+*.docx
+*.pdf
+
+# La retroalimentacion del docente es de la entrega anterior y personal.
+S*_feedback_docente.txt
+
+# ---------------------------------------------------------------------------
+# CREDENCIALES - nunca deben salir del equipo
+# ---------------------------------------------------------------------------
+wallet/
+Wallet_*/
+*wallet*.zip
+Wallet_*.zip
+*.sso
+cwallet.sso
+ewallet.p12
+tnsnames.ora
+sqlnet.ora
+ojdbc.properties
+keystore.jks
+truststore.jks
+application-local.properties
+*-secrets.properties
+.env
+!.env.example
+
+# Llaves SSH de la instancia EC2 (AWS Academy). Dan acceso a la maquina.
+*.pem
+*.ppk
+
+# ---------------------------------------------------------------------------
+# Paquete de entrega
+# ---------------------------------------------------------------------------
+# El ZIP se sube a AVA, no al repositorio: duplicaria todo el contenido.
+Exp3_S8_*/
+Exp3_S8_*.zip
+
+# ---------------------------------------------------------------------------
+# Build
+# ---------------------------------------------------------------------------
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# ---------------------------------------------------------------------------
+# IDE
+# ---------------------------------------------------------------------------
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.classpath
+.project
+.settings/
+bin/
+
+# ---------------------------------------------------------------------------
+# SO
+# ---------------------------------------------------------------------------
+Thumbs.db
+.DS_Store
+
+# ---------------------------------------------------------------------------
+# Salidas de ejecucion
+# ---------------------------------------------------------------------------
+# Los log de arranque de cada BFF quedan en el TEMP del sistema, no aqui.
+*.log
+
+# La carpeta evidencias/ SI se versiona: es uno de los tres aspectos que exige
+# la seccion Entrega de las instrucciones.
+!evidencias/
+!evidencias/**
+
+# ---------------------------------------------------------------------------
+# Base H2 en archivo
+# ---------------------------------------------------------------------------
+# La generan los BFF al arrancar, a partir de los CSV oficiales que ya estan en
+# el repositorio. Versionarla seria versionar una copia derivada, y ademas
+# quedaria congelada con los saldos de la ultima corrida.
+basedatos/
+*.mv.db
+*.trace.db
+
+
+# ---------------------------------------------------------------------------
+# Certificados TLS
+# ---------------------------------------------------------------------------
+# Un keystore contiene la clave privada del servidor. Versionarlo en un
+# repositorio publico lo vuelve inutil como credencial: quien clone el proyecto
+# podria suplantar al servidor. Se regeneran con generar_certificados.ps1.
+certs/
+*.p12
+*.jks
+
+# Artefactos de una corrida local del ecosistema
+logs/
+.procesos.txt
+
+# Journal del broker Artemis: mensajes persistidos de una corrida local.
+datos-broker/

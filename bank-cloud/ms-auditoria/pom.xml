@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cl.duoc.bank</groupId>
+        <artifactId>bank-cloud</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>ms-auditoria</artifactId>
+    <name>ms-auditoria</name>
+    <description>
+        El registro de auditoria: se suscribe a los cuatro topicos de la saga y guarda
+        cada evento, inmutable y en orden de llegada.
+
+        Solo lee del broker; no publica nada y el broker se lo impide aunque lo
+        intentara. Con ese registro reconstruye la historia de cualquier transferencia
+        aplicando sus eventos en orden, que es la idea central de Event Sourcing
+        aplicada a la auditoria. Ver RegistroEventos.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>cl.duoc.bank</groupId>
+            <artifactId>bank-contrato</artifactId>
+        </dependency>
+        <!-- SEMANA 8: servidor de recursos OAuth 2.0. Valida los tokens del auth-server
+             y traduce sus scopes a permisos (ConversorJwt). Reemplaza al usuario y
+             clave Basic con que los BFF se identificaban hasta la semana 7. -->
+        <dependency>
+            <groupId>cl.duoc.bank</groupId>
+            <artifactId>bank-seguridad</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cl.duoc.bank</groupId>
+            <artifactId>bank-eventos</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Su base: el registro de eventos. Otra H2, la tercera: base por
+             servicio. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- SEMANA 8: perfil 'oracle', con esquema propio en la Autonomous
+             Database (ver herramientas/usuarios_oracle_s8.sql). Mismo par que
+             bank-core: oraclepki es el que lee el cwallet.sso del wallet. -->
+        <dependency>
+            <groupId>com.oracle.database.jdbc</groupId>
+            <artifactId>ojdbc11</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.oracle.database.security</groupId>
+            <artifactId>oraclepki</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Requerido por spring.cloud.config.retry. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-config</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.retry</groupId>
+            <artifactId>spring-retry</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,329 @@
+# ===========================================================================
+# bank-cloud - orquestacion completa del ecosistema
+# ===========================================================================
+#   docker compose up -d --build        construye las imagenes y levanta todo
+#   docker compose ps                   estado y salud de cada contenedor
+#   docker compose logs -f ms-cuentas   logs de las dos replicas
+#   docker compose down                 detiene y elimina los contenedores
+#                                       (los volumenes se conservan)
+#
+# Los valores que cambian por entorno -claves, wallet, cuantas replicas- van en
+# un archivo .env junto a este (plantilla: .env.example). El .env NO se publica.
+#
+# ORDEN DE ARRANQUE
+# Lo que en levantar.ps1 era un script que esperaba a cada servicio, aqui lo
+# declara 'depends_on' con 'condition: service_healthy': compose no arranca un
+# servicio hasta que el HEALTHCHECK de sus dependencias responde UP.
+#
+#   certificados ─┐
+#   config-server ┼─> broker-mensajeria ─> ms-cuentas (x2) ─┬─> bff-movil
+#   eureka-server ┘                        ms-transferencias ┼─> bff-cajero
+#                                          ms-auditoria      └─> bff-web
+#
+# Igual los servicios toleran que una dependencia falte o se caiga despues:
+# reintentan el Config Server al arrancar, guardan copia del registro de
+# Eureka, y publican por outbox con Circuit Breaker. depends_on ordena el
+# arranque normal; la resiliencia cubre todo lo demas.
+#
+# QUE SE EXPONE HACIA AFUERA
+# Solo los tres BFF, que son la puerta de entrada de los canales. Eureka y la
+# consola del broker se publican unicamente en 127.0.0.1 de la maquina
+# anfitriona: se ven por un tunel SSH, nunca desde internet. Config Server,
+# JMS (61616) y los microservicios no se publican: solo existen dentro de la
+# red 'banco'.
+# ===========================================================================
+
+name: bank-cloud
+
+# ---------------------------------------------------------------------------
+# Bloques comunes (anclas YAML)
+# ---------------------------------------------------------------------------
+x-servicio: &servicio
+  # Reinicio automatico si el proceso termina con error: un OutOfMemory
+  # (ExitOnOutOfMemoryError en el Dockerfile) o una caida. Un 'docker compose
+  # stop' manual NO lo dispara, que es lo que permite a la evidencia apagar
+  # servicios a proposito.
+  restart: on-failure
+  networks: [banco]
+
+x-construir: &construir
+  context: .
+  target: servicio
+
+# Donde encuentra cada servicio a los demas: por nombre de contenedor, dentro
+# de la red 'banco'. Son las variables que reemplazan a los 'localhost' de la
+# configuracion.
+x-entorno: &entorno
+  CONFIG_SERVER_URL: http://config-server:7888
+  EUREKA_URL: http://eureka-server:8761/eureka/
+  BROKER_HOST: broker-mensajeria
+  # OAuth 2.0: por donde se piden tokens y se lee la clave publica (la red
+  # interna), y el 'iss' que se exige. Son el mismo valor, pero son dos cosas
+  # distintas: la primera es una direccion, la segunda un nombre que viaja
+  # firmado dentro del token.
+  AUTH_SERVER_URL: http://auth-server:9000
+  AUTH_ISSUER: http://auth-server:9000
+  TZ: America/Santiago
+
+# Salud por Actuator. start_period largo: en una VM de 2 vCPU con diez JVM
+# arrancando a la vez, un servicio Spring Cloud tarda de uno a tres minutos, y
+# los fallos del healthcheck durante ese periodo no cuentan.
+x-salud: &salud
+  interval: 10s
+  timeout: 5s
+  retries: 30
+  start_period: 180s
+
+x-oracle: &oracle
+  ORACLE_JDBC_URL: ${ORACLE_JDBC_URL:-}
+  SPRING_PROFILES_ACTIVE: ${PERFIL_BD:-oracle}
+
+services:
+
+  # -------------------------------------------------------------------------
+  # Certificados TLS de los BFF
+  # -------------------------------------------------------------------------
+  # Contenedor de un solo uso: genera los tres keystores si no existen y
+  # termina. Reemplaza a generar_certificados.ps1, que solo corre en Windows,
+  # para que el ecosistema se levante igual en una VM Linux. Los keystores
+  # quedan en un volumen, no en la imagen ni en el repositorio: contienen la
+  # clave privada de cada canal.
+  certificados:
+    image: eclipse-temurin:21-jre
+    restart: "no"
+    environment:
+      BFF_KEYSTORE_PASSWORD: ${BFF_KEYSTORE_PASSWORD:-bffbancoxyz}
+    volumes:
+      - certs:/certs
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e
+        for canal in bff-web bff-movil bff-cajero; do
+          if [ -f /certs/$$canal.p12 ]; then
+            echo "$$canal.p12 ya existe"
+            continue
+          fi
+          keytool -genkeypair -alias $$canal -keyalg RSA -keysize 2048 -validity 365 \
+            -storetype PKCS12 -keystore /certs/$$canal.p12 \
+            -storepass "$$BFF_KEYSTORE_PASSWORD" \
+            -dname "CN=localhost, OU=$$canal, O=Banco XYZ, L=Santiago, C=CL" \
+            -ext "SAN=dns:localhost,ip:127.0.0.1"
+          echo "$$canal.p12 generado"
+        done
+        # Legibles por el usuario sin privilegios de las imagenes (banco).
+        chmod 644 /certs/*.p12
+
+  # -------------------------------------------------------------------------
+  # Infraestructura Spring Cloud
+  # -------------------------------------------------------------------------
+  config-server:
+    <<: *servicio
+    build: { <<: *construir, args: { MODULO: config-server } }
+    image: bank-cloud/config-server:s8
+    environment:
+      TZ: America/Santiago
+    deploy: { resources: { limits: { memory: 384m } } }
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "curl", "-fs", "http://localhost:7888/actuator/health"]
+
+  eureka-server:
+    <<: *servicio
+    build: { <<: *construir, args: { MODULO: eureka-server } }
+    image: bank-cloud/eureka-server:s8
+    environment:
+      TZ: America/Santiago
+    ports:
+      - "127.0.0.1:8761:8761"
+    deploy: { resources: { limits: { memory: 448m } } }
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "curl", "-fs", "http://localhost:8761/actuator/health"]
+
+  # -------------------------------------------------------------------------
+  # Seguridad: servidor de autorizacion OAuth 2.0
+  # -------------------------------------------------------------------------
+  # El unico que emite y firma tokens. Se publica hacia afuera porque las
+  # personas inician sesion aqui (authorization_code) y el cajero pide aqui su
+  # token (client_credentials). Los microservicios no dependen de el para
+  # arrancar: leen su clave publica en la primera peticion y la guardan.
+  auth-server:
+    <<: *servicio
+    build: { <<: *construir, args: { MODULO: auth-server } }
+    image: bank-cloud/auth-server:s8
+    environment:
+      <<: *entorno
+    ports:
+      - "9000:9000"
+    deploy: { resources: { limits: { memory: 448m } } }
+    depends_on:
+      config-server: { condition: service_healthy }
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "curl", "-fs", "http://localhost:9000/actuator/health"]
+
+  # -------------------------------------------------------------------------
+  # Mensajeria: ActiveMQ Artemis (JMS)
+  # -------------------------------------------------------------------------
+  broker-mensajeria:
+    <<: *servicio
+    build: { <<: *construir, args: { MODULO: broker-mensajeria } }
+    image: bank-cloud/broker-mensajeria:s8
+    environment:
+      <<: *entorno
+      # Aceptar conexiones de los otros contenedores. El 61616 igual no se
+      # publica hacia afuera: no hay entrada 'ports' para el.
+      BROKER_ESCUCHA: 0.0.0.0
+    ports:
+      - "127.0.0.1:8161:8161"   # consola, solo por tunel SSH
+    volumes:
+      # El journal sobrevive a un reinicio del contenedor: un mensaje aceptado
+      # por el broker no se pierde porque el broker se caiga.
+      - datos-broker:/app/datos-broker
+    deploy: { resources: { limits: { memory: 512m } } }
+    depends_on:
+      config-server: { condition: service_healthy }
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "curl", "-fs", "http://localhost:8161/actuator/health"]
+
+  # -------------------------------------------------------------------------
+  # Microservicios de negocio
+  # -------------------------------------------------------------------------
+  ms-cuentas:
+    <<: *servicio
+    build: { <<: *construir, args: { MODULO: ms-cuentas } }
+    image: bank-cloud/ms-cuentas:s8
+    environment:
+      <<: [*entorno, *oracle]
+      ORACLE_USER: BANK_CUENTAS
+      ORACLE_PASSWORD: ${CLAVE_BANK_CUENTAS:-}
+    volumes:
+      - ${WALLET_DIR:-./wallet}:/wallet:ro
+    deploy:
+      # Escalado horizontal: las dos replicas comparten la suscripcion JMS y
+      # el broker les reparte las transferencias. Sin puertos publicados, dos
+      # replicas escuchando en el 8090 no chocan: cada una tiene su IP en la
+      # red 'banco' y se registra en Eureka con ella.
+      #
+      # Con PERFIL_BD=default (H2 en memoria) cada replica tendria SU base, con
+      # saldos distintos: en ese modo hay que usar CUENTAS_REPLICAS=1.
+      replicas: ${CUENTAS_REPLICAS:-2}
+      resources: { limits: { memory: 640m } }
+    depends_on:
+      config-server: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+      broker-mensajeria: { condition: service_healthy }
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "curl", "-fs", "http://localhost:8090/actuator/health"]
+
+  ms-transferencias:
+    <<: *servicio
+    build: { <<: *construir, args: { MODULO: ms-transferencias } }
+    image: bank-cloud/ms-transferencias:s8
+    environment:
+      <<: [*entorno, *oracle]
+      ORACLE_USER: BANK_TRANSF
+      ORACLE_PASSWORD: ${CLAVE_BANK_TRANSF:-}
+    volumes:
+      - ${WALLET_DIR:-./wallet}:/wallet:ro
+    deploy: { resources: { limits: { memory: 512m } } }
+    depends_on:
+      config-server: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+      broker-mensajeria: { condition: service_healthy }
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "curl", "-fs", "http://localhost:8091/actuator/health"]
+
+  ms-auditoria:
+    <<: *servicio
+    build: { <<: *construir, args: { MODULO: ms-auditoria } }
+    image: bank-cloud/ms-auditoria:s8
+    environment:
+      <<: [*entorno, *oracle]
+      ORACLE_USER: BANK_AUDIT
+      ORACLE_PASSWORD: ${CLAVE_BANK_AUDIT:-}
+    volumes:
+      - ${WALLET_DIR:-./wallet}:/wallet:ro
+    deploy: { resources: { limits: { memory: 512m } } }
+    depends_on:
+      config-server: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+      broker-mensajeria: { condition: service_healthy }
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "curl", "-fs", "http://localhost:8092/actuator/health"]
+
+  # -------------------------------------------------------------------------
+  # BFF: la puerta de entrada de cada canal (HTTPS)
+  # -------------------------------------------------------------------------
+  bff-web:
+    <<: *servicio
+    build: { <<: *construir, args: { MODULO: bff-web } }
+    image: bank-cloud/bff-web:s8
+    environment:
+      <<: *entorno
+      BFF_KEYSTORE_PASSWORD: ${BFF_KEYSTORE_PASSWORD:-bffbancoxyz}
+    ports:
+      - "8081:8081"
+    volumes:
+      - certs:/app/certs:ro
+    deploy: { resources: { limits: { memory: 512m } } }
+    depends_on:
+      certificados: { condition: service_completed_successfully }
+      auth-server: { condition: service_healthy }
+      ms-cuentas: { condition: service_healthy }
+      ms-transferencias: { condition: service_healthy }
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "curl", "-kfs", "https://localhost:8081/actuator/health"]
+
+  bff-movil:
+    <<: *servicio
+    build: { <<: *construir, args: { MODULO: bff-movil } }
+    image: bank-cloud/bff-movil:s8
+    environment:
+      <<: *entorno
+      BFF_KEYSTORE_PASSWORD: ${BFF_KEYSTORE_PASSWORD:-bffbancoxyz}
+    ports:
+      - "8082:8082"
+    volumes:
+      - certs:/app/certs:ro
+    deploy: { resources: { limits: { memory: 448m } } }
+    depends_on:
+      certificados: { condition: service_completed_successfully }
+      auth-server: { condition: service_healthy }
+      ms-cuentas: { condition: service_healthy }
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "curl", "-kfs", "https://localhost:8082/actuator/health"]
+
+  bff-cajero:
+    <<: *servicio
+    build: { <<: *construir, args: { MODULO: bff-cajero } }
+    image: bank-cloud/bff-cajero:s8
+    environment:
+      <<: *entorno
+      BFF_KEYSTORE_PASSWORD: ${BFF_KEYSTORE_PASSWORD:-bffbancoxyz}
+    ports:
+      - "8083:8083"
+    volumes:
+      - certs:/app/certs:ro
+    deploy: { resources: { limits: { memory: 448m } } }
+    depends_on:
+      certificados: { condition: service_completed_successfully }
+      auth-server: { condition: service_healthy }
+      ms-cuentas: { condition: service_healthy }
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "curl", "-kfs", "https://localhost:8083/actuator/health"]
+
+networks:
+  banco:
+
+volumes:
+  certs:
+  datos-broker:

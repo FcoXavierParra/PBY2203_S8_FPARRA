@@ -1,0 +1,37 @@
+# ---------------------------------------------------------------------------
+# Config Server - el unico servicio cuya configuracion no puede ser remota
+# ---------------------------------------------------------------------------
+server:
+  # 7888 y no el 8888 que usa la documentacion de Spring Cloud Config. En el
+  # equipo donde se desarrollo esta entrega, el 8888 dejo de poder abrirse:
+  # Tomcat fallaba con "Port 8888 was already in use" aunque netstat no
+  # mostraba a nadie escuchando ahi, lo mas probable una politica o un agente
+  # de seguridad del equipo. El numero no tiene nada de especial; lo que
+  # importa es que los siete clientes lo leen del mismo lugar, su
+  # spring.config.import.
+  port: 7888
+
+spring:
+  application:
+    name: config-server
+  profiles:
+    # 'native' = servir los archivos de config-repo/ en vez de clonar un git.
+    # Ver el javadoc de ConfigServerApplication para por que.
+    active: native
+  cloud:
+    config:
+      server:
+        native:
+          search-locations: classpath:/config-repo
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # /actuator/health es lo que prueba la evidencia para demostrar que el
+        # servidor esta arriba antes de levantar a los que dependen de el.
+        include: health,info
+
+logging:
+  level:
+    cl.duoc.bank: INFO

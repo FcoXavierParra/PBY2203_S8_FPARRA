@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cl.duoc.bank</groupId>
+        <artifactId>bank-cloud</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>bank-cliente</artifactId>
+    <name>bank-cliente</name>
+    <description>
+        El cliente HTTP de ms-cuentas, con su Circuit Breaker, su Retry y sus Fallback.
+
+        Esta aqui y no repetido en cada BFF porque los tres hacen exactamente la misma
+        llamada: descubrir ms-cuentas por Eureka, presentarse con sus credenciales de
+        servicio y protegerse de que no conteste. Lo que SI cambia por canal -cuanto se
+        espera, si se reintenta, que se responde cuando falla- se configura desde afuera y
+        se decide en cada BFF.
+
+        Separado de bank-contrato a proposito: aquel son records sin dependencias, esto
+        trae Spring, el balanceador y Resilience4j. Un modulo que solo necesite entender el
+        formato de una respuesta no deberia arrastrar todo eso.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>cl.duoc.bank</groupId>
+            <artifactId>bank-contrato</artifactId>
+        </dependency>
+
+        <!-- RestClient y la serializacion JSON. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- SEMANA 8: cliente OAuth 2.0. Pide al auth-server los tokens de
+             maquina (client_credentials) con que el BFF llama a los
+             microservicios, y los renueva antes de que venzan. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-client</artifactId>
+        </dependency>
+
+        <!-- Resuelve lb://ms-cuentas contra las instancias que publica Eureka
+             y reparte entre ellas. Es lo que permite que la direccion del
+             servicio no este escrita en ninguna parte. -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+        </dependency>
+
+        <!-- Circuit Breaker, Retry y los contadores que expone el actuator.
+             resilience4j-spring-boot3 es el que aporta el soporte de las
+             anotaciones; el starter de Spring Cloud por si solo trae la
+             abstraccion programatica, no el aspecto. -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring-boot3</artifactId>
+        </dependency>
+        <!-- Las anotaciones de Resilience4j se aplican por AOP. Sin esto
+             compilan, se leen bien y no hacen absolutamente nada. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+    </dependencies>
+
+</project>

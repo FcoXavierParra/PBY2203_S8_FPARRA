@@ -1,0 +1,97 @@
+# ===========================================================================
+# bff-cajero - canal cajero automatico
+# ===========================================================================
+
+server:
+  port: 8083
+  ssl:
+    enabled: true
+    key-store: file:./certs/bff-cajero.p12
+    key-store-type: PKCS12
+    key-alias: bff-cajero
+    key-store-password: ${BFF_KEYSTORE_PASSWORD:bffbancoxyz}
+    enabled-protocols: TLSv1.2,TLSv1.3
+
+eureka:
+  instance:
+    secure-port: 8083
+    secure-port-enabled: true
+    non-secure-port-enabled: false
+    status-page-url: https://${spring.cloud.client.ip-address}:8083/actuator/info
+    health-check-url: https://${spring.cloud.client.ip-address}:8083/actuator/health
+
+bank:
+  cajero:
+    # La sesion de tarjeta: dos minutos. Un cajero atiende a una persona
+    # parada en la calle que se va sin cerrar la sesion, y ademas entrega
+    # dinero fisico. Ver SesionCajeroService.
+    duracion-sesion: PT2M
+
+    # El PIN del cliente, segundo factor despues del token del terminal.
+    #
+    # ALCANCE: uno solo para todas las tarjetas. Es la simplificacion mas
+    # grande de este canal y conviene decirlo: en un banco real el PIN se
+    # guarda cifrado por cuenta en un modulo de seguridad de hardware, se
+    # compara dentro de ese modulo y tres intentos fallidos bloquean la
+    # tarjeta.
+    pin: ${BFF_CAJERO_PIN:1234}
+
+# ---------------------------------------------------------------------------
+# OAuth 2.0 (SEMANA 8)
+# ---------------------------------------------------------------------------
+# Dos papeles:
+#   - servidor de recursos: acepta el token del TERMINAL (cliente
+#     cajero-terminal-01, scope cajero.terminal, aud = bff-cajero). Reemplaza a
+#     la clave de terminal compartida X-ATM-Terminal.
+#   - cliente: pide su propio token de maquina para llamar a ms-cuentas.
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          audiences: bff-cajero
+      client:
+        registration:
+          # EL UNICO CANAL QUE PUEDE MOVER DINERO: cuentas.operar. Si el canal
+          # movil quedara comprometido, su token no tendria este scope y
+          # ms-cuentas rechazaria el retiro con 403.
+          ms-cuentas:
+            provider: banco
+            client-id: bff-cajero
+            client-secret: ${AUTH_SECRETO_BFF_CAJERO:bff-cajero-desarrollo-2026}
+            authorization-grant-type: client_credentials
+            scope: cuentas.leer,cuentas.operar
+
+# ---------------------------------------------------------------------------
+# Tolerancia a fallos: este canal ajusta los numeros
+# ---------------------------------------------------------------------------
+# Los otros dos heredan la configuracion por defecto. Aqui no alcanza, y la
+# razon es que este canal mueve dinero.
+#
+# NO SE REINTENTA EL RETIRO. Un reintento automatico sobre una operacion que
+# ya pudo haberse aplicado al otro lado es la forma clasica de entregar el
+# dinero dos veces: el primer intento se completa en ms-cuentas, la respuesta
+# se pierde en la red, el cliente reintenta y descuenta de nuevo. Mientras la
+# operacion no sea idempotente -no lo es: no hay clave de idempotencia en el
+# contrato-, reintentar es peor que fallar. Las CONSULTAS si se reintentan,
+# porque leer dos veces no tiene efecto.
+#
+# Y el timeout es mas corto: una persona parada frente a un cajero con la
+# tarjeta dentro no espera tres segundos. Antes de eso conviene decirle que
+# vuelva a intentar.
+resilience4j:
+  circuitbreaker:
+    instances:
+      msCuentas:
+        base-config: default
+        # Mas estricto que el resto: con un tercio de fallos ya abre. Es
+        # preferible que el cajero se declare fuera de servicio a que deje al
+        # cliente esperando con la tarjeta adentro.
+        failure-rate-threshold: 34
+        slow-call-duration-threshold: 1s
+  retry:
+    instances:
+      # Solo para consultas de saldo. El retiro no pasa por aqui: ver
+      # ClienteCuentas.retirar.
+      msCuentas:
+        base-config: default

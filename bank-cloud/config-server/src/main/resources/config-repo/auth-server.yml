@@ -1,0 +1,119 @@
+# ===========================================================================
+# auth-server - servidor de autorizacion OAuth 2.0 (SEMANA 8)
+# ===========================================================================
+# Clientes registrados, usuarios y reglas de audiencia. Las claves y secretos
+# llegan por variables de entorno; los valores por defecto son de DESARROLLO y
+# el .env de cada despliegue los reemplaza.
+# ===========================================================================
+
+server:
+  port: 9000
+
+eureka:
+  instance:
+    appname: auth-server
+
+bank:
+  auth:
+    # Valor del claim 'iss'. Los servidores de recursos exigen exactamente
+    # este valor (spring.security.oauth2.resourceserver.jwt.issuer-uri en
+    # application.yml). En Docker, compose lo fija en http://auth-server:9000.
+    emisor: ${AUTH_ISSUER:http://localhost:9000}
+
+    # Prefijo del scope -> servidor de recursos que lo acepta (claim 'aud').
+    recursos:
+      cuentas: ms-cuentas
+      transferencias: ms-transferencias
+      auditoria: ms-auditoria
+      cajero: bff-cajero
+
+    clientes:
+      # ---------------------------------------------------------------------
+      # Personas: authorization_code + PKCE
+      # ---------------------------------------------------------------------
+      # La redireccion es a 127.0.0.1: es la forma que el estandar para
+      # aplicaciones nativas (RFC 8252) indica para recibir el codigo en la
+      # propia maquina del usuario. El servidor de autorizacion exige que la
+      # redireccion pedida coincida EXACTAMENTE con una de estas: un atacante
+      # no puede desviar el codigo a un sitio suyo.
+      - id: canal-web
+        tipo: publico
+        canal: web
+        audiencia: bff-web
+        redirecciones: http://127.0.0.1:8080/callback
+        # Una jornada de trabajo en el navegador se corta en tramos de 30
+        # minutos: si el token se filtra, sirve poco tiempo.
+        duracion-token: PT30M
+      - id: canal-movil
+        tipo: publico
+        canal: movil
+        audiencia: bff-movil
+        redirecciones: http://127.0.0.1:8080/callback
+        duracion-token: PT15M
+
+      # ---------------------------------------------------------------------
+      # Maquinas: client_credentials
+      # ---------------------------------------------------------------------
+      # El cajero automatico se autentica como maquina ante su BFF. Reemplaza
+      # a la clave de terminal compartida (X-ATM-Terminal) de las semanas
+      # anteriores: ahora cada terminal tiene SU identidad, revocable sin
+      # tocar a los demas.
+      - id: cajero-terminal-01
+        tipo: maquina
+        secreto: ${AUTH_SECRETO_TERMINAL_01:terminal-01-desarrollo-2026}
+        scopes: cajero.terminal
+        duracion-token: PT5M
+
+      # Los BFF, cuando llaman a los microservicios. Cada uno recibe SOLO los
+      # scopes de lo que su canal hace: el movil no puede retirar dinero ni
+      # iniciar transferencias aunque alguien tome su secreto.
+      - id: bff-web
+        tipo: maquina
+        secreto: ${AUTH_SECRETO_BFF_WEB:bff-web-desarrollo-2026}
+        scopes: cuentas.leer,transferencias.crear,transferencias.leer
+        duracion-token: PT5M
+      - id: bff-movil
+        tipo: maquina
+        secreto: ${AUTH_SECRETO_BFF_MOVIL:bff-movil-desarrollo-2026}
+        scopes: cuentas.leer
+        duracion-token: PT5M
+      - id: bff-cajero
+        tipo: maquina
+        secreto: ${AUTH_SECRETO_BFF_CAJERO:bff-cajero-desarrollo-2026}
+        scopes: cuentas.leer,cuentas.operar
+        duracion-token: PT5M
+
+      # Operacion del banco: lo que usan los scripts de evidencia para mirar
+      # por dentro (outbox, auditoria, estadisticas, circuitos). Reemplaza a
+      # las credenciales Basic svc-* de la semana 7.
+      - id: consola-operaciones
+        tipo: maquina
+        secreto: ${AUTH_SECRETO_CONSOLA:consola-desarrollo-2026}
+        scopes: cuentas.leer,transferencias.operar,auditoria.leer
+        duracion-token: PT10M
+
+    # -----------------------------------------------------------------------
+    # Personas. Antes vivian en bff-web.yml (usuarios) y bff-movil.yml
+    # (dispositivos); ahora hay un solo directorio, aqui.
+    # -----------------------------------------------------------------------
+    usuarios:
+      - usuario: cliente
+        clave: ${AUTH_CLAVE_CLIENTE:cliente123}
+        cuenta: 105
+        roles: CLIENTE
+        canales: web,movil
+      - usuario: cliente2
+        clave: ${AUTH_CLAVE_CLIENTE2:cliente456}
+        cuenta: 107
+        roles: CLIENTE
+        canales: web,movil
+      # Sin cuenta propia: ve la cartera completa por su rol, y solo desde la
+      # web del banco.
+      - usuario: ejecutivo
+        clave: ${AUTH_CLAVE_EJECUTIVO:ejecutivo123}
+        roles: EJECUTIVO,CLIENTE
+        canales: web
+
+logging:
+  level:
+    org.springframework.security: INFO

@@ -1,0 +1,29 @@
+# ===========================================================================
+# bff-cajero - lo unico que queda dentro del jar
+# ===========================================================================
+# El puerto, el certificado TLS, el secreto de firma, la duracion del token,
+# las credenciales de servicio y los umbrales del Circuit Breaker llegan todos
+# desde el Config Server. Ver config-repo/bff-cajero.yml.
+#
+# En la Experiencia 2 este archivo tenia noventa lineas y habia que recompilar
+# para cambiar cualquiera de ellas. Que ahora tenga diez es la demostracion
+# concreta de para que sirve un servidor de configuracion centralizada.
+#
+# Sobre spring.config.import en vez de bootstrap.yml: ver el comentario
+# extenso en ms-cuentas/src/main/resources/application.yml. En resumen, la
+# guia muestra el mecanismo anterior a Spring Boot 2.4, que en Boot 3.x se
+# ignora en silencio.
+
+spring:
+  application:
+    name: bff-cajero
+  config:
+    import: "configserver:${CONFIG_SERVER_URL:http://localhost:7888}"
+  cloud:
+    config:
+      fail-fast: true
+      retry:
+        initial-interval: 2000
+        multiplier: 1.5
+        max-interval: 15000
+        max-attempts: 20

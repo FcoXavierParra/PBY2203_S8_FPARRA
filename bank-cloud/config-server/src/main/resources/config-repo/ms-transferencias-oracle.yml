@@ -1,0 +1,39 @@
+# ===========================================================================
+# ms-transferencias, perfil 'oracle' (SEMANA 8)
+# ===========================================================================
+# Su base pasa a ser el esquema BANK_TRANSF de la Autonomous Database. Sigue
+# siendo SU base: ms-cuentas se conecta como BANK_CUENTAS y no puede leer ni
+# escribir estas tablas, asi que la saga sigue siendo necesaria (ver el
+# comentario de ms-transferencias.yml).
+#
+# Las credenciales llegan por variables de entorno; en Docker, desde el .env
+# que docker-compose.yaml reparte a cada servicio. Aqui no hay ninguna.
+# ===========================================================================
+
+spring:
+  datasource:
+    url: ${ORACLE_JDBC_URL}
+    username: ${ORACLE_USER}
+    password: ${ORACLE_PASSWORD}
+    driver-class-name: oracle.jdbc.OracleDriver
+    hikari:
+      # Presupuesto de sesiones de la ADB Always Free (tope de unas 20):
+      #   ms-cuentas 4 + 4 (dos replicas), ms-transferencias 4, ms-auditoria 3
+      #   = 15, y quedan unas 5 para administracion y reconexiones.
+      # Cuatro alcanzan: la saga procesa de a una transferencia por hilo, y el
+      # publicador del outbox usa una conexion cada medio segundo.
+      maximum-pool-size: 4
+      minimum-idle: 1
+      # La ADB corta conexiones ociosas; se validan antes de usarlas y se
+      # renuevan antes de que la base las corte.
+      connection-timeout: 60000
+      validation-timeout: 10000
+      max-lifetime: 600000
+      connection-test-query: SELECT 1 FROM DUAL
+  jpa:
+    hibernate:
+      # 'update' y no 'validate': este esquema es de ms-transferencias y de
+      # nadie mas, y parte vacio. La razon por la que ms-cuentas usa 'validate'
+      # -que el esquema lo definio el batch de la Experiencia 1- aqui no aplica.
+      ddl-auto: update
+    open-in-view: false

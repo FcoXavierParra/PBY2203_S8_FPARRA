@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cl.duoc.bank</groupId>
+        <artifactId>bank-cloud</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>bank-eventos</artifactId>
+    <name>bank-eventos</name>
+    <description>
+        La mensajeria comun a ms-transferencias, ms-cuentas y ms-auditoria.
+
+        Hace con JMS lo mismo que bank-cliente hace con HTTP: los tres servicios hablan
+        con el broker de la misma manera -mismo formato de mensaje, misma forma de
+        suscribirse, mismas marcas de deduplicacion-, y si cada uno lo armara por su
+        cuenta bastaria que uno se desincronizara para que sus eventos llegaran y nadie
+        los entendiera. Lo que SI cambia por servicio -a que se suscribe y con cuanta
+        concurrencia- lo declara cada uno en sus @JmsListener.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>cl.duoc.bank</groupId>
+            <artifactId>bank-contrato</artifactId>
+        </dependency>
+        <!-- Cliente JMS de Artemis y la integracion de Spring (JmsTemplate,
+             @JmsListener). Solo el cliente: el servidor vive en
+             broker-mensajeria. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-artemis</artifactId>
+        </dependency>
+        <!-- ObjectMapper con soporte de java.time: los eventos llevan Instant. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-json</artifactId>
+        </dependency>
+    </dependencies>
+</project>

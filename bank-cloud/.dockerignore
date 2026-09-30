@@ -1,0 +1,30 @@
+# Lo que no debe entrar al contexto de construccion.
+#
+# Credenciales primero: si algo de esto entrara al contexto, 'COPY . .' lo
+# dejaria dentro de la etapa de compilacion, y cualquiera con la imagen podria
+# extraerlo de sus capas.
+certs/
+*.p12
+*.jks
+*.pem
+*.ppk
+.env
+wallet/
+Wallet_*
+*wallet*.zip
+
+# Salidas de corridas locales: pesan y no aportan nada a la imagen.
+**/target/
+**/bin/
+logs/
+basedatos/
+datos-broker/
+*.log
+.procesos.txt
+
+# IDE
+.idea/
+.vscode/
+**/.classpath
+**/.project
+**/.settings/

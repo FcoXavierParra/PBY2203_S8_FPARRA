@@ -1,0 +1,108 @@
+# ===========================================================================
+# ms-cuentas - el servicio de dominio
+# ===========================================================================
+
+server:
+  port: 8090
+
+# ---------------------------------------------------------------------------
+# Base de datos
+# ---------------------------------------------------------------------------
+# UN SOLO PROCESO ABRE LA BASE, y eso simplifica algo que en la entrega
+# anterior fue un problema real.
+#
+# En la Experiencia 2 los tres BFF tenian cada uno su conexion, y como cada
+# uno levantaba su propia H2 en memoria, un retiro hecho por el cajero no se
+# veia desde la web ni desde el movil: eran tres copias separadas. La solucion
+# de entonces fue una H2 en archivo con AUTO_SERVER=TRUE, donde el primer
+# proceso en llegar hacia de servidor de los otros dos; funcionaba, pero era un
+# montaje de escritorio que no se parecia a nada de produccion.
+#
+# Con el dominio detras de un microservicio ese problema desaparecio: los tres
+# canales ven lo mismo porque preguntan al mismo servicio.
+#
+# SEMANA 7: VUELVE AUTO_SERVER, Y POR UNA RAZON DISTINTA
+# ------------------------------------------------------
+# Ahora hay DOS instancias de ms-cuentas consumiendo la misma suscripcion, y
+# las dos tienen que ver los mismos saldos: son un mismo servicio escalado, no
+# dos servicios. En la Experiencia 2 AUTO_SERVER juntaba tres servicios
+# distintos sobre una base, que era el problema; aqui junta dos copias del
+# mismo, que es lo normal -en produccion las dos apuntarian a la misma Oracle-.
+#
+#   AUTO_SERVER=TRUE     la primera instancia abre el archivo y atiende a la
+#                        segunda por TCP.
+#   AUTO_RECONNECT=TRUE  si la primera se detiene, la segunda toma el archivo
+#                        y sigue. La evidencia detiene una instancia a
+#                        proposito.
+#   LOCK_TIMEOUT=10000   cuanto espera una transaccion por una cuenta
+#                        bloqueada por la otra instancia. El valor por defecto
+#                        de H2 es 1 s, y en la rafaga dos transferencias sobre
+#                        la misma cuenta lo superan: la espera es parte del
+#                        diseno, no un error. Ver CuentaRepository.bloquear.
+spring:
+  artemis:
+    user: ms-cuentas
+    password: ${BROKER_CLAVE_CUENTAS:cuentas-broker-2026}
+  datasource:
+    url: jdbc:h2:file:./basedatos/bank;AUTO_SERVER=TRUE;AUTO_RECONNECT=TRUE;LOCK_TIMEOUT=10000
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    show-sql: false
+
+# ---------------------------------------------------------------------------
+# Dataset oficial
+# ---------------------------------------------------------------------------
+# Ruta bajo classpath con los CSV de data/semana_3 del repositorio oficial
+# bank_legacy_data. Es el valor POR DEFECTO a proposito: en la Experiencia 1
+# los datos oficiales quedaron detras de un parametro que habia que cambiar a
+# mano, y esa fue la observacion del docente.
+bank:
+  # Como se identifica esta instancia en los eventos (procesadoPor) y en
+  # /interno/eventos/estadisticas: es lo que permite contar cuantas
+  # transferencias proceso cada una. Fuera de Docker las dos instancias se
+  # distinguen por puerto (8090 / 8093). En Docker las dos replicas escuchan en
+  # el 8090, cada una en su contenedor, y lo que las distingue es el hostname,
+  # que Docker fija por contenedor. Se usan los dos, hostname y puerto, para
+  # que el identificador sea unico en ambos casos.
+  instancia: ${spring.application.name}:${HOSTNAME:local}:${server.port}
+  datos:
+    ruta: data
+    cargar-si-vacio: true
+
+  cuentas:
+    # Retardo artificial para demostrar el Circuit Breaker sin matar el
+    # proceso. Ver el campo latenciaSimulada de CuentaInternaController.
+    latencia-simulada-ms: 0
+
+  # -------------------------------------------------------------------------
+  # Consumo de eventos (nuevo en S7)
+  # -------------------------------------------------------------------------
+  eventos:
+    # Costo SIMULADO de procesar una transferencia: lo que en un banco real
+    # tardaria la consulta al motor antifraude. Sin el, procesar un evento
+    # toma milisegundos y no hay forma de medir cuanto aporta una segunda
+    # instancia. Ver TransferenciasListener.
+    costo-procesamiento-ms: 200
+    # Consumidores por instancia. Uno a proposito: asi la mejora que se mide
+    # en la evidencia es la de escalar horizontalmente -otra instancia- y no
+    # se confunde con la de agregar hilos dentro de la misma.
+    concurrencia: 1
+
+eureka:
+  instance:
+    # El nombre con el que los BFF lo buscan.
+    appname: ms-cuentas
+
+# ---------------------------------------------------------------------------
+# OAuth 2.0 (SEMANA 8): este servicio solo acepta tokens dirigidos a el
+# ---------------------------------------------------------------------------
+# Reemplaza a las credenciales Basic de la semana 7. El emisor y la clave
+# publica son comunes y estan en application.yml; aqui va solo la audiencia.
+# Un token valido del auth-server pero pedido para otro servicio -o el de una
+# persona para su BFF- se rechaza con 401.
+spring.security.oauth2.resourceserver.jwt.audiences: ms-cuentas

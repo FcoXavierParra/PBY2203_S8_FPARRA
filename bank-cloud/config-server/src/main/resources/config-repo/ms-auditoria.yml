@@ -1,0 +1,36 @@
+# ===========================================================================
+# ms-auditoria - registro inmutable de los eventos de la saga
+# ===========================================================================
+
+server:
+  port: 8092
+
+spring:
+  datasource:
+    url: jdbc:h2:file:./basedatos/auditoria
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  artemis:
+    # Su usuario del broker solo puede CONSUMIR. Ver BrokerConfig.permisos():
+    # si este servicio quedara comprometido, no podria inyectar eventos
+    # falsos en la saga.
+    user: ms-auditoria
+    password: ${BROKER_CLAVE_AUDITORIA:auditoria-broker-2026}
+
+eureka:
+  instance:
+    appname: ms-auditoria
+
+# ---------------------------------------------------------------------------
+# OAuth 2.0 (SEMANA 8): este servicio solo acepta tokens dirigidos a el
+# ---------------------------------------------------------------------------
+# Reemplaza a las credenciales Basic de la semana 7. El emisor y la clave
+# publica son comunes y estan en application.yml; aqui va solo la audiencia.
+# Un token valido del auth-server pero pedido para otro servicio -o el de una
+# persona para su BFF- se rechaza con 401.
+spring.security.oauth2.resourceserver.jwt.audiences: ms-auditoria

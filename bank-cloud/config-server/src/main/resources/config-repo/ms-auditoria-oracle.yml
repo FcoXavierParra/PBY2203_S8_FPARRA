@@ -1,0 +1,32 @@
+# ===========================================================================
+# ms-auditoria, perfil 'oracle' (SEMANA 8)
+# ===========================================================================
+# Su base pasa a ser el esquema BANK_AUDIT de la Autonomous Database. Es el
+# esquema con menos privilegios del banco: no ve saldos ni transferencias,
+# solo el registro de eventos que construye con lo que recibe del broker.
+#
+# Las credenciales llegan por variables de entorno; en Docker, desde el .env
+# que docker-compose.yaml reparte a cada servicio. Aqui no hay ninguna.
+# ===========================================================================
+
+spring:
+  datasource:
+    url: ${ORACLE_JDBC_URL}
+    username: ${ORACLE_USER}
+    password: ${ORACLE_PASSWORD}
+    driver-class-name: oracle.jdbc.OracleDriver
+    hikari:
+      # Tres: es el que menos escribe (una fila por evento) y el presupuesto de
+      # sesiones de la ADB Always Free es compartido. Ver
+      # ms-transferencias-oracle.yml.
+      maximum-pool-size: 3
+      minimum-idle: 1
+      connection-timeout: 60000
+      validation-timeout: 10000
+      max-lifetime: 600000
+      connection-test-query: SELECT 1 FROM DUAL
+  jpa:
+    hibernate:
+      # Esquema propio y vacio al empezar: Hibernate crea la tabla.
+      ddl-auto: update
+    open-in-view: false

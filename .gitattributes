@@ -1,0 +1,10 @@
+# Archivos que se ejecutan dentro de Linux (la imagen Docker, la VM de la
+# nube) siempre con fin de linea LF, aunque se clone en Windows: un RUN de
+# varias lineas o un bloque de docker-compose con CRLF falla con errores que
+# no apuntan a la causa.
+Dockerfile      text eol=lf
+.dockerignore   text eol=lf
+*.yaml          text eol=lf
+*.yml           text eol=lf
+*.sh            text eol=lf
+.env.example    text eol=lf
