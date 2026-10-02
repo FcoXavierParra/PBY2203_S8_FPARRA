@@ -2,6 +2,8 @@ package cl.duoc.bank.cliente;
 
 import cl.duoc.bank.contrato.EstadoTransferencia;
 import cl.duoc.bank.contrato.SolicitudTransferencia;
+import io.github.resilience4j.bulkhead.BulkheadFullException;
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
@@ -33,6 +35,23 @@ import java.util.Optional;
  *
  * Un 422 -cupo excedido, misma cuenta- es una respuesta de negocio y no cuenta
  * como fallo del circuito, por el mismo motivo que un 404 en ClienteCuentas.
+ *
+ * SEMANA 8: BULKHEAD, UN COMPARTIMENTO POR DEPENDENCIA
+ * ====================================================
+ * bff-web llama a dos servicios, y todas sus peticiones comparten el mismo
+ * grupo de hilos de Tomcat. Si ms-transferencias se pusiera lento -la base
+ * esta en otro continente, el broker puede estar reconectando-, cada
+ * transferencia en curso ocuparia un hilo hasta su timeout de 2,5 s, y con
+ * trafico suficiente no quedarian hilos para NADA: tampoco para consultar
+ * cuentas, que no tienen ningun problema. El Circuit Breaker no lo evita, porque
+ * lento no es lo mismo que caido y el circuito tarda varias llamadas en abrir.
+ *
+ * El Bulkhead pone un tope: a lo mas 5 llamadas simultaneas hacia
+ * ms-transferencias (ms-cuentas tiene su propio compartimento de 20). La sexta
+ * no espera: se rechaza al instante con BulkheadFullException, el canal
+ * responde 503 y el hilo queda libre para otra cosa. Es el mismo principio que
+ * los mamparos de un barco: una via de agua inunda un compartimento, no el
+ * casco entero. Numeros en config-repo/application.yml y bff-web.yml.
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -54,6 +73,7 @@ public class ClienteTransferencias {
     }
 
     @CircuitBreaker(name = CB, fallbackMethod = "solicitudNoDisponible")
+    @Bulkhead(name = CB)
     @Retry(name = CB)
     public Respuesta solicitar(SolicitudTransferencia s, String claveIdempotencia) {
         return rest.post()
@@ -80,6 +100,7 @@ public class ClienteTransferencias {
     }
 
     @CircuitBreaker(name = CB, fallbackMethod = "estadoNoDisponible")
+    @Bulkhead(name = CB)
     @Retry(name = CB)
     public Optional<EstadoTransferencia> estado(String transferenciaId) {
         ResponseEntity<EstadoTransferencia> r = rest.get()
@@ -104,6 +125,8 @@ public class ClienteTransferencias {
         boolean abierto = causa instanceof CallNotPermittedException;
         if (abierto) {
             log.warn("Circuito ABIERTO hacia ms-transferencias: '{}' no se intento", operacion);
+        } else if (causa instanceof BulkheadFullException) {
+            log.warn("Bulkhead LLENO hacia ms-transferencias: '{}' rechazada sin salir a la red", operacion);
         } else {
             log.warn("Fallo la llamada '{}' a ms-transferencias: {}", operacion, causa.toString());
         }

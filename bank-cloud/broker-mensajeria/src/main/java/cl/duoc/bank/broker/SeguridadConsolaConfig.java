@@ -59,7 +59,7 @@ public class SeguridadConsolaConfig {
 
     /**
      * UP solo si el servidor Artemis esta activo, no solo el proceso Java.
-     * levantar.ps1 encadena el arranque por este endpoint: si el broker no
+     * El healthcheck de docker-compose.yaml lo consulta: si el broker no
      * pudo abrir su journal o su puerto, los servicios que dependen de el no
      * deben arrancar creyendo que esta.
      */

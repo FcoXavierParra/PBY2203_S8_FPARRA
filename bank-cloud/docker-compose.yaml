@@ -154,6 +154,11 @@ services:
     image: bank-cloud/auth-server:s8
     environment:
       <<: *entorno
+      # De que cuenta es titular cada usuario de prueba. Con H2 son las del
+      # dataset oficial (105, 107); contra Oracle se pueden cambiar sin
+      # recompilar, si el batch dejo esas cuentas con poco saldo.
+      AUTH_CUENTA_CLIENTE: ${AUTH_CUENTA_CLIENTE:-105}
+      AUTH_CUENTA_CLIENTE2: ${AUTH_CUENTA_CLIENTE2:-107}
     ports:
       - "9000:9000"
     deploy: { resources: { limits: { memory: 448m } } }
@@ -267,6 +272,10 @@ services:
     environment:
       <<: *entorno
       BFF_KEYSTORE_PASSWORD: ${BFF_KEYSTORE_PASSWORD:-bffbancoxyz}
+      # Umbrales hacia ms-transferencias segun donde este la base. Ver
+      # config-repo/bff-web.yml y la seccion "Latencia" del .env.example.
+      TRANSF_TIMEOUT_LECTURA_MS: ${TRANSF_TIMEOUT_LECTURA_MS:-2500}
+      TRANSF_LLAMADA_LENTA: ${TRANSF_LLAMADA_LENTA:-2s}
     ports:
       - "8081:8081"
     volumes:

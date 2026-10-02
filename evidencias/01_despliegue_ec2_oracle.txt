@@ -1,0 +1,206 @@
+﻿Evidencia S8 - despliegue en AWS EC2 con Oracle Autonomous Database
+Generada: 2026-10-02 09:41:31   Servidor: 54.146.141.226
+
+==============================================================================
+0. Sobre que corre
+==============================================================================
+-- maquina
+  Ubuntu 26.04 LTS, 2 vCPU, 7.6Gi RAM, 3.7Gi en uso
+  Docker version 29.1.3, build 29.1.3-0ubuntu4.1
+  Docker Compose version 2.40.3+ds1-0ubuntu1
+
+-- configuracion del despliegue (.env, sin claves)
+  PERFIL_BD=oracle
+  ORACLE_JDBC_URL=jdbc:oracle:thin:@oraclecloudfparradb_low?TNS_ADMIN=/wallet
+  CUENTAS_REPLICAS=2
+  TRANSF_TIMEOUT_LECTURA_MS=5000
+  TRANSF_LLAMADA_LENTA=4s
+
+-- imagenes (una por servicio, mismo Dockerfile multi-etapa)
+bank-cloud/auth-server:s8  553MB
+bank-cloud/bff-cajero:s8  560MB
+bank-cloud/bff-movil:s8  560MB
+bank-cloud/bff-web:s8  560MB
+bank-cloud/broker-mensajeria:s8  562MB
+bank-cloud/config-server:s8  539MB
+bank-cloud/eureka-server:s8  564MB
+bank-cloud/ms-auditoria:s8  647MB
+bank-cloud/ms-cuentas:s8  647MB
+bank-cloud/ms-transferencias:s8  649MB
+
+-- contenedores
+bank-cloud-auth-server-1	Up 4 minutes (healthy)
+bank-cloud-bff-cajero-1	Up 2 minutes (healthy)
+bank-cloud-bff-movil-1	Up 2 minutes (healthy)
+bank-cloud-bff-web-1	Up 2 minutes (healthy)
+bank-cloud-broker-mensajeria-1	Up 4 minutes (healthy)
+bank-cloud-certificados-1	Exited (0) 5 minutes ago
+bank-cloud-config-server-1	Up 5 minutes (healthy)
+bank-cloud-eureka-server-1	Up 5 minutes (healthy)
+bank-cloud-ms-auditoria-1	Up 4 minutes (healthy)
+bank-cloud-ms-cuentas-1	Up 4 minutes (healthy)
+bank-cloud-ms-cuentas-2	Up 4 minutes (healthy)
+bank-cloud-ms-transferencias-1	Up 4 minutes (healthy)
+
+-- memoria por contenedor (uso / limite del compose)
+bank-cloud-auth-server-1	208.6MiB / 448MiB
+bank-cloud-bff-cajero-1	255.4MiB / 448MiB
+bank-cloud-bff-movil-1	255.5MiB / 448MiB
+bank-cloud-bff-web-1	266MiB / 512MiB
+bank-cloud-broker-mensajeria-1	232.1MiB / 512MiB
+bank-cloud-config-server-1	201.8MiB / 384MiB
+bank-cloud-eureka-server-1	268.2MiB / 448MiB
+bank-cloud-ms-auditoria-1	339.9MiB / 512MiB
+bank-cloud-ms-cuentas-1	364.1MiB / 640MiB
+bank-cloud-ms-cuentas-2	370.7MiB / 640MiB
+bank-cloud-ms-transferencias-1	412.6MiB / 512MiB
+
+-- Eureka: instancias registradas
+  AUTH-SERVER        cb7091d2ecb2:auth-server:9000                 UP
+  BFF-WEB            e4d41b04f59c:bff-web:8081                     UP
+  MS-TRANSFERENCIAS  060d3c09e7c5:ms-transferencias:8091           UP
+  BFF-CAJERO         a7b5393961d0:bff-cajero:8083                  UP
+  BFF-MOVIL          0504b24bfed4:bff-movil:8082                   UP
+  MS-CUENTAS         61bab8b9e795:ms-cuentas:8090                  UP
+  MS-CUENTAS         c83dfe7c95aa:ms-cuentas:8090                  UP
+  MS-AUDITORIA       8ef3f99aecee:ms-auditoria:8092                UP
+
+==============================================================================
+1. OAuth 2.0: auth-server (Spring Authorization Server, RS256)
+==============================================================================
+-- 1.1 metadatos publicados
+  issuer=http://auth-server:9000
+  grant_types=authorization_code,client_credentials,refresh_token,urn:ietf:params:oauth:grant-type:device_code,urn:ietf:params:oauth:grant-type:token-exchange
+  pkce=S256
+-- 1.2 client_credentials: bff-web pide un token para ms-cuentas
+  HTTP 200  sub=bff-web aud=ms-cuentas scope=cuentas.leer dura=300s
+-- 1.3 dos scopes de dos microservicios: el token va dirigido a ambos
+  HTTP 200  aud=ms-transferencias,ms-cuentas scope=transferencias.crear,cuentas.leer
+-- 1.4 secreto equivocado
+  HTTP 401  {"error":"invalid_client"}
+-- 1.5 bff-movil pide cuentas.operar, que no tiene asignado
+  HTTP 400  {"error":"invalid_scope"}
+-- 1.6 authorization_code + PKCE: una persona entra por el canal web
+  redireccion -> http://127.0.0.1:8080/callback?code=<...>&state=xyz
+  HTTP 200  sub=cliente aud=bff-web canal=web roles=CLIENTE cuenta=105 dura=1800s
+-- 1.7 el ejecutivo no esta habilitado en el canal movil
+  HTTP 400  {"error_description":"El usuario no esta habilitado para el canal movil","error":"access_denied"}
+-- 1.8 codigo canjeado sin el verificador PKCE
+  HTTP 401
+-- 1.9 clave equivocada en el formulario de login
+  tras login -> /login?error   token HTTP 400
+
+==============================================================================
+2. Los tres canales, protegidos con tokens del auth-server
+==============================================================================
+-- WEB (8081)
+  sin token, cuenta 105            -> 401
+  cliente, SU cuenta 105           -> 200  {"cuentaId":105,"titular":"Steve Rogers","tipoCuenta":"ahorro","saldo":4650,"saldoFormateado":"$4.650","edad":35,"segmentoEtario":"adulto","cantidadMo...
+  cliente, cuenta AJENA 107        -> 403
+  cliente, cartera completa        -> 403
+  ejecutivo, cuenta 107            -> 200
+  cliente transfiere 1000 a 107    -> 202  {"transferenciaId":"552a4f76-58ea-4b0e-bf29-87adcee54722","estado":"PENDIENTE","cuentaDestino":107,"monto":1000,"motivo":null,"creadaEn":"2026-10-02T1...
+  saldo de la 105 antes 4650, despues de la saga 3650
+-- MOVIL (8082)
+  cliente movil, SU cuenta         -> 200  {"cuentaId":105,"saldo":3650,"moneda":"CLP","ultimos":[{"fecha":"2024-12-13","monto":3000,"tipo":"compra"},{"fecha":"2024-12-13","monto":3000,"tipo":"...
+  cliente movil, cuenta ajena      -> 403
+  token WEB en el BFF movil        -> 401
+  token MOVIL en el BFF web        -> 401
+-- CAJERO (8083): token de terminal (client_credentials) + PIN
+  cuenta del cajero: 123 (la de mayor saldo)
+  sesion sin token de terminal     -> 401
+  sesion con token de PERSONA web  -> 401
+  terminal, PIN malo               -> 401
+  terminal, PIN bueno              -> 200  sesion de 120 s
+  saldo sin sesion                 -> 403
+  saldo con sesion                 -> 200  {"saldoDisponible":10150,"moneda":"CLP"}
+  retiro 10000 (billetes de 10.000) -> 200  {"autorizado":true,"codigo":"AUTORIZADO","mensaje":"Retire su dinero","montoEntregado":10000,"saldoRestante":150}
+  saldo con la sesion ya cerrada   -> 403
+
+==============================================================================
+3. Latencia de la nube y el Circuit Breaker del cajero (llamada lenta = 1 s)
+==============================================================================
+La EC2 esta en us-east-1 y la base en sa-santiago-1: ~210 ms por viaje.
+  10 consultas de saldo desde Chile (codigo/tiempo total): 200/0.932435s 200/1.064065s 200/0.942615s 200/0.924204s 200/0.907278s 200/0.935155s 200/0.931018s 200/0.883090s 200/1.000360s 200/0.774391s
+  circuito msCuentas del cajero: estado=CLOSED llamadas=10 lentas=0 fallidas=0
+
+==============================================================================
+4. Bulkhead hacia ms-cuentas (bff-web, 20 llamadas simultaneas)
+==============================================================================
+Ficha de una cuenta, rafagas disparadas dentro de la EC2.
+== 1 en paralelo -> https://localhost:8081/api/web/cuentas/107
+  HTTP 200 x1
+  tiempo promedio 1.01 s, maximo 1.01 s
+== 16 en paralelo -> https://localhost:8081/api/web/cuentas/107
+  HTTP 200 x16
+  tiempo promedio 2.12 s, maximo 2.46 s
+== 40 en paralelo -> https://localhost:8081/api/web/cuentas/107
+  HTTP 200 x31
+  HTTP 503 x9
+  tiempo promedio 1.98 s, maximo 3.15 s
+== /actuator/bulkheadevents (acumulado)
+     48 "bulkheadName":"msCuentas","type":"CALL_FINISHED"
+     43 "bulkheadName":"msCuentas","type":"CALL_PERMITTED"
+      9 "bulkheadName":"msCuentas","type":"CALL_REJECTED"
+      2 "bulkheadName":"msTransferencias","type":"CALL_FINISHED"
+      2 "bulkheadName":"msTransferencias","type":"CALL_PERMITTED"
+== circuito msCuentas de bff-web
+"msCuentas":{"status":"UP","details":{"failureRate":"0.0%","failureRateThreshold":"50.0%","slowCallRate":"0.0%","slowCallRateThreshold":"50.0%","bufferedCalls":10,"slowCalls":0,"slowFailedCalls":0,"failedCalls":0,"notPermittedCalls":0,"state":"CLOSED"}}
+
+==============================================================================
+5. Bulkhead hacia ms-transferencias (bff-web, 5 simultaneas)
+==============================================================================
+== 1 transferencias simultaneas de $100
+  HTTP 202 x1
+  tiempo promedio 1.33 s, maximo 1.33 s
+== circuito msTransferencias de bff-web
+"msTransferencias":{"status":"UP","details":{"failureRate":"-1.0%","failureRateThreshold":"50.0%","slowCallRate":"-1.0%","slowCallRateThreshold":"50.0%","bufferedCalls":3,"slowCalls":0,"slowFailedCalls":0,"failedCalls":0,"notPermittedCalls":0,"state":"CLOSED"}}
+== 15 transferencias simultaneas de $100
+  HTTP 202 x5
+  HTTP 503 x10
+  tiempo promedio 1.21 s, maximo 4.45 s
+== circuito msTransferencias de bff-web
+"msTransferencias":{"status":"UP","details":{"failureRate":"0.0%","failureRateThreshold":"50.0%","slowCallRate":"12.5%","slowCallRateThreshold":"50.0%","bufferedCalls":8,"slowCalls":1,"slowFailedCalls":0,"failedCalls":0,"notPermittedCalls":0,"state":"CLOSED"}}
+-- la saga cuadra: cada 202 es una transferencia aplicada, cada 503 no salio del BFF
+  saldo de la 105 antes 3650, despues 3050: se debitaron 600
+
+==============================================================================
+6. Falla real: ms-transferencias se cae y vuelve
+==============================================================================
+Se detiene el contenedor de verdad (docker compose stop). Nadie reinicia
+bff-web: el circuito abre, el canal degrada, y al volver el servicio el
+circuito pasa por HALF_OPEN y cierra solo.
+ Container bank-cloud-ms-transferencias-1  Stopped
+  t=   2 s  transferir -> 503 en  1,56 s  circuito CLOSED    (fallidas 1, sin intentar 0)  {"disponible":false,"circuitoAbierto":false,"mensaje":"Las transferenc...
+  t=   6 s  transferir -> 503 en  1,49 s  circuito CLOSED    (fallidas 2, sin intentar 0)  {"disponible":false,"circuitoAbierto":false,"mensaje":"Las transferenc...
+  t=  10 s  transferir -> 503 en  1,51 s  circuito CLOSED    (fallidas 3, sin intentar 0)  {"disponible":false,"circuitoAbierto":false,"mensaje":"Las transferenc...
+  t=  14 s  transferir -> 503 en  1,49 s  circuito CLOSED    (fallidas 4, sin intentar 0)  {"disponible":false,"circuitoAbierto":false,"mensaje":"Las transferenc...
+  t=  17 s  transferir -> 503 en  1,23 s  circuito OPEN      (fallidas 5, sin intentar 0)  {"disponible":false,"circuitoAbierto":false,"mensaje":"Las transferenc...
+  t=  20 s  transferir -> 503 en  0,56 s  circuito OPEN      (fallidas 5, sin intentar 1)  {"disponible":false,"circuitoAbierto":true,"mensaje":"Las transferenci...
+  t=  23 s  transferir -> 503 en  0,49 s  circuito OPEN      (fallidas 5, sin intentar 2)  {"disponible":false,"circuitoAbierto":true,"mensaje":"Las transferenci...
+  t=  26 s  transferir -> 503 en  0,50 s  circuito OPEN      (fallidas 5, sin intentar 3)  {"disponible":false,"circuitoAbierto":true,"mensaje":"Las transferenci...
+  mientras tanto, consultar la cuenta (otro servicio, otro circuito) -> 200
+-- se vuelve a levantar ms-transferencias
+ Container bank-cloud-ms-transferencias-1  Started
+  t=  45 s  transferir -> 503 en  0,50 s  circuito HALF_OPEN (fallidas 1, sin intentar 0)
+  t=  56 s  transferir -> 503 en  0,51 s  circuito OPEN      (fallidas 2, sin intentar 0)
+  t=  68 s  transferir -> 503 en  0,63 s  circuito HALF_OPEN (fallidas 1, sin intentar 0)
+  t=  79 s  transferir -> 503 en  0,48 s  circuito OPEN      (fallidas 2, sin intentar 0)
+  t=  91 s  transferir -> 202 en  2,33 s  circuito HALF_OPEN (fallidas 0, sin intentar 0)
+  t= 104 s  transferir -> 202 en  1,80 s  circuito CLOSED    (fallidas 0, sin intentar 0)
+  circuito al final: CLOSED    (fallidas 0, sin intentar 0)
+  transferencias aceptadas (202): 2; saldo de la 105 antes 3050, despues 2850: se debitaron 200
+
+==============================================================================
+7. Falla real: se cae una de las dos replicas de ms-cuentas
+==============================================================================
+Se detiene una replica (docker stop). El balanceador y el Retry mandan las
+consultas a la otra, y la suscripcion compartida le entrega a ella todos
+los eventos de la saga.
+bank-cloud-ms-cuentas-2 detenido
+  10 consultas con una sola replica viva (codigo/tiempo): 200/2.257772s 200/2.213099s 200/2.316115s 200/2.346102s 200/2.183822s 200/2.219482s 200/2.370956s 200/2.180754s 200/2.171362s 200/1.192587s
+  circuito msCuentas de bff-web: CLOSED    (fallidas 0, sin intentar 0)
+  transferencia de 100 -> 202; saldo de la 105 antes 2850, despues 2750: la proceso la replica que quedo
+-- se vuelve a levantar la replica
+bank-cloud-ms-cuentas-2 healthy tras 45 s
+instancias de MS-CUENTAS en Eureka: 2

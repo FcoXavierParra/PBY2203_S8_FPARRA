@@ -99,12 +99,12 @@ bank:
     usuarios:
       - usuario: cliente
         clave: ${AUTH_CLAVE_CLIENTE:cliente123}
-        cuenta: 105
+        cuenta: ${AUTH_CUENTA_CLIENTE:105}
         roles: CLIENTE
         canales: web,movil
       - usuario: cliente2
         clave: ${AUTH_CLAVE_CLIENTE2:cliente456}
-        cuenta: 107
+        cuenta: ${AUTH_CUENTA_CLIENTE2:107}
         roles: CLIENTE
         canales: web,movil
       # Sin cuenta propia: ve la cartera completa por su rol, y solo desde la

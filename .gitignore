@@ -92,7 +92,8 @@ basedatos/
 # ---------------------------------------------------------------------------
 # Un keystore contiene la clave privada del servidor. Versionarlo en un
 # repositorio publico lo vuelve inutil como credencial: quien clone el proyecto
-# podria suplantar al servidor. Se regeneran con generar_certificados.ps1.
+# podria suplantar al servidor. Los genera el contenedor
+# "certificados" del docker-compose.yaml, en un volumen.
 certs/
 *.p12
 *.jks

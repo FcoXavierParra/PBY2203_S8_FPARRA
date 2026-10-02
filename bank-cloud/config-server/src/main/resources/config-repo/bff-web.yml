@@ -13,8 +13,8 @@ server:
   # canal web.
   #
   # Los certificados NO estan en el repositorio: un keystore guarda una clave
-  # privada y versionarla la vuelve inutil como credencial. Los genera
-  # generar_certificados.ps1, que levantar.ps1 invoca solo si faltan.
+  # privada y versionarla la vuelve inutil como credencial. Los genera el
+  # contenedor "certificados" del docker-compose.yaml la primera vez.
   #
   # ALCANCE: autofirmados, de desarrollo. En produccion irian emitidos por una
   # CA, o el TLS lo terminaria el balanceador.
@@ -44,6 +44,14 @@ bank:
     # Respaldo para marcar anomalias cuando los datos vienen de los CSV y
     # ningun batch los proceso. Ver el javadoc de CuentaWebController.
     umbral-anomalia: 2500
+  # SEMANA 8: cuanto se espera a ms-transferencias. 2,5 s alcanzan con la base
+  # en la misma red; desplegado en AWS us-east-1 contra la ADB de Santiago,
+  # crear una transferencia son varias escrituras con ~210 ms de ida y vuelta
+  # cada una y se midio que pasa de 2,5 s con 5 en paralelo: el BFF respondia
+  # 503 por transferencias que SI quedaban registradas. El .env del despliegue
+  # lo sube a 5000 sin recompilar (ver docker-compose.yaml).
+  transferencias:
+    timeout-lectura-ms: ${TRANSF_TIMEOUT_LECTURA_MS:2500}
 
 # ---------------------------------------------------------------------------
 # OAuth 2.0 (SEMANA 8)
@@ -98,6 +106,10 @@ resilience4j:
         base-config: default
       msTransferencias:
         base-config: default
+        # Va de la mano con el timeout de arriba: si la llamada puede durar
+        # hasta 5 s, considerarla "lenta" a los 2 s abriria el circuito
+        # contra un servicio sano solo por la distancia a la base.
+        slow-call-duration-threshold: ${TRANSF_LLAMADA_LENTA:2s}
   retry:
     instances:
       msCuentas:
@@ -106,3 +118,15 @@ resilience4j:
       # idempotencia. Ver el javadoc de ClienteTransferencias.
       msTransferencias:
         base-config: default
+  # SEMANA 8: dos compartimentos, uno por dependencia. Transferir es lo que
+  # mas tarda (cada una son varias escrituras en la base) y lo que menos se
+  # hace: 5 simultaneas bastan, y si ms-transferencias se pone lento no puede
+  # tomar mas de 5 hilos. Las consultas de cuentas conservan sus 20 del
+  # compartimento por defecto aunque las transferencias esten saturadas.
+  bulkhead:
+    instances:
+      msCuentas:
+        base-config: default
+      msTransferencias:
+        base-config: default
+        max-concurrent-calls: 5

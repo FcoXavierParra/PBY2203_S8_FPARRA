@@ -84,7 +84,7 @@ USER banco
 
 # La memoria la fija docker-compose.yaml con un limite por contenedor, y la JVM
 # dimensiona el heap como porcentaje de ESE limite. Es la misma idea que el
-# -Xmx por servicio de comun.ps1, pero decidido por el orquestador: si el
+# -Xmx por servicio del script de la semana 7, pero decidido por el orquestador: si el
 # limite sube, el heap sube solo. Sin limite, la JVM tomaria 1/4 de la RAM de
 # la maquina en cada contenedor.
 #   ExitOnOutOfMemoryError: un servicio sin memoria termina en vez de quedar

@@ -15,8 +15,8 @@ import java.sql.Statement;
  * los diez intentos consecutivos, asi que dos corridas a ciegas la dejan
  * inaccesible justo cuando se la necesita. Eso paso.
  *
- * Esta sonda gasta UN intento y traduce el error a algo accionable. levantar.ps1
- * la ejecuta antes de lanzar nada cuando se pide el perfil oracle.
+ * Esta sonda gasta UN intento y traduce el error a algo accionable. Se corre
+ * una vez por usuario antes de "docker compose up" con el perfil oracle.
  *
  * Ademas comprueba que las tablas que los BFF esperan existan y tengan filas: el
  * perfil oracle usa ddl-auto=validate, asi que una tabla ausente tumbaria las

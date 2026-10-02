@@ -14,8 +14,8 @@ bank:
     # pero el 61616 NO se publica hacia afuera de la red interna de compose.
     # En produccion, ademas, iria con TLS.
     aceptor: "tcp://${BROKER_ESCUCHA:localhost}:61616"
-    # Journal en disco. levantar.ps1 lo borra al inicio de cada corrida para
-    # que la evidencia parta de cero, igual que la base H2.
+    # Journal en disco. En docker-compose.yaml es un volumen: sobrevive a un
+    # reinicio del contenedor, y "docker compose down -v" lo borra.
     datos: ./datos-broker
     # Tres entregas y a la DLQ. Suficiente para superar una falla pasajera -un
     # bloqueo de base, un reinicio- sin demorar indefinidamente un mensaje que

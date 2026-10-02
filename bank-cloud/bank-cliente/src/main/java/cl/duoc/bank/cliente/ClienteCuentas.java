@@ -6,6 +6,8 @@ import cl.duoc.bank.contrato.PaginaTransacciones;
 import cl.duoc.bank.contrato.ResultadoRetiro;
 import cl.duoc.bank.contrato.SolicitudRetiro;
 import cl.duoc.bank.contrato.TransaccionBanco;
+import io.github.resilience4j.bulkhead.BulkheadFullException;
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
@@ -75,6 +77,7 @@ public class ClienteCuentas {
      * nada este roto.
      */
     @CircuitBreaker(name = CB, fallbackMethod = "fichaNoDisponible")
+    @Bulkhead(name = CB)
     @Retry(name = CB)
     public Optional<FichaCuenta> ficha(Long cuentaId) {
         ResponseEntity<FichaCuenta> r = rest.get()
@@ -87,6 +90,7 @@ public class ClienteCuentas {
     }
 
     @CircuitBreaker(name = CB, fallbackMethod = "listaNoDisponible")
+    @Bulkhead(name = CB)
     @Retry(name = CB)
     public List<FichaCuenta> listarCuentas() {
         FichaCuenta[] fichas = rest.get()
@@ -97,6 +101,7 @@ public class ClienteCuentas {
     }
 
     @CircuitBreaker(name = CB, fallbackMethod = "movimientosNoDisponibles")
+    @Bulkhead(name = CB)
     @Retry(name = CB)
     public Optional<List<MovimientoCuenta>> movimientos(Long cuentaId) {
         ResponseEntity<MovimientoCuenta[]> r = rest.get()
@@ -113,6 +118,7 @@ public class ClienteCuentas {
     }
 
     @CircuitBreaker(name = CB, fallbackMethod = "paginaNoDisponible")
+    @Bulkhead(name = CB)
     @Retry(name = CB)
     public PaginaTransacciones transacciones(LocalDate desde, LocalDate hasta, int pagina, int tamano) {
         return rest.get()
@@ -127,6 +133,7 @@ public class ClienteCuentas {
     }
 
     @CircuitBreaker(name = CB, fallbackMethod = "ultimasNoDisponibles")
+    @Bulkhead(name = CB)
     @Retry(name = CB)
     public List<TransaccionBanco> ultimasTransacciones() {
         TransaccionBanco[] t = rest.get()
@@ -146,6 +153,7 @@ public class ClienteCuentas {
      * de ResultadoRetiro.
      */
     @CircuitBreaker(name = CB, fallbackMethod = "retiroNoDisponible")
+    @Bulkhead(name = CB)
     public ResultadoRetiro retirar(Long cuentaId, BigDecimal monto) {
         return rest.post()
                 .uri("/interno/cuentas/{id}/retiro", cuentaId)
@@ -194,6 +202,12 @@ public class ClienteCuentas {
             // Esta linea es la que prueba que el circuito hizo su trabajo: la
             // peticion ni siquiera salio a la red.
             log.warn("Circuito ABIERTO: '{}' no se intento contra ms-cuentas", operacion);
+        } else if (causa instanceof BulkheadFullException) {
+            // SEMANA 8: el compartimento de ms-cuentas esta lleno. No es una
+            // falla de ms-cuentas -por eso el circuito la ignora, ver
+            // application.yml- sino de este BFF protegiendose: ya hay demasiadas
+            // llamadas en curso hacia ese servicio.
+            log.warn("Bulkhead LLENO: '{}' rechazada sin salir a la red", operacion);
         } else {
             log.warn("Fallo la llamada '{}' a ms-cuentas: {}", operacion, causa.toString());
         }

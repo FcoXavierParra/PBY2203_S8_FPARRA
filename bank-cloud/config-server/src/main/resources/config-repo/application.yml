@@ -37,7 +37,7 @@ management:
         # circuitbreakers y circuitbreakerevents son los que permiten
         # DEMOSTRAR el estado del Circuit Breaker en la evidencia, en vez de
         # solo afirmar que esta configurado.
-        include: health,info,circuitbreakers,circuitbreakerevents,refresh
+        include: health,info,circuitbreakers,circuitbreakerevents,bulkheads,bulkheadevents,refresh
   endpoint:
     health:
       show-details: always
@@ -71,6 +71,11 @@ resilience4j:
         slow-call-duration-threshold: 2s
         slow-call-rate-threshold: 50
         register-health-indicator: true
+        # SEMANA 8: un rechazo del Bulkhead no es una falla del servicio de
+        # destino sino saturacion de este lado. Si contara, un pico de trafico
+        # abriria el circuito contra un servicio perfectamente sano.
+        ignore-exceptions:
+          - io.github.resilience4j.bulkhead.BulkheadFullException
   retry:
     configs:
       default:
@@ -83,6 +88,15 @@ resilience4j:
           - java.io.IOException
           - java.util.concurrent.TimeoutException
           - org.springframework.web.client.ResourceAccessException
+  # SEMANA 8: Bulkhead de semaforo, un compartimento por servicio de destino.
+  # Ver el javadoc de ClienteTransferencias. max-wait-duration 0: si el
+  # compartimento esta lleno se rechaza en el acto; esperar turno volveria a
+  # dejar hilos bloqueados, que es justo lo que se quiere evitar.
+  bulkhead:
+    configs:
+      default:
+        max-concurrent-calls: 20
+        max-wait-duration: 0ms
 
 # ---------------------------------------------------------------------------
 # Mensajeria (nuevo en S7): como llegar al broker
